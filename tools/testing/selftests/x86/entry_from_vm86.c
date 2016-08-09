@@ -95,6 +95,11 @@ asm (
 	"int3\n\t"
 	"vmcode_int80:\n\t"
 	"int $0x80\n\t"
+	"umip:\n\t"
+	"sgdt (2052)\n\t"
+	"sidt (2052)\n\t"
+	"smsw (2052)\n\t"
+	"int $0x80\n\t"
 	".size vmcode, . - vmcode\n\t"
 	"end_vmcode:\n\t"
 	".code32\n\t"
@@ -103,7 +108,7 @@ asm (
 
 extern unsigned char vmcode[], end_vmcode[];
 extern unsigned char vmcode_bound[], vmcode_sysenter[], vmcode_syscall[],
-	vmcode_sti[], vmcode_int3[], vmcode_int80[];
+	vmcode_sti[], vmcode_int3[], vmcode_int80[], umip[];
 
 /* Returns false if the test was skipped. */
 static bool do_test(struct vm86plus_struct *v86, unsigned long eip,
@@ -217,6 +222,9 @@ int main(void)
 	/* INT80 -- should exit with "INTx 0x80" */
 	v86.regs.eax = (unsigned int)-1;
 	do_test(&v86, vmcode_int80 - vmcode, VM86_INTx, 0x80, "int80");
+
+	/* UMIP -- should exit with INTx 0x80 unless UMIP was not disabled */
+	do_test(&v86, umip - vmcode, VM86_INTx, 0x80, "UMIP tests");
 
 	/* Execute a null pointer */
 	v86.regs.cs = 0;
