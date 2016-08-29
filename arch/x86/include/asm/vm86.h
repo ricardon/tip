@@ -40,6 +40,7 @@ struct vm86 {
 	struct revectored_struct int_revectored;
 	struct revectored_struct int21_revectored;
 	struct vm86plus_info_struct vm86plus;
+	bool disable_x86_umip;
 };
 
 #ifdef CONFIG_VM86
@@ -47,6 +48,7 @@ struct vm86 {
 void handle_vm86_fault(struct kernel_vm86_regs *, long);
 int handle_vm86_trap(struct kernel_vm86_regs *, long, int);
 void save_v86_state(struct kernel_vm86_regs *, int);
+void __init vm86_disable_x86_umip(void);
 
 struct task_struct;
 
@@ -76,6 +78,7 @@ void release_vm86_irqs(struct task_struct *);
 
 #define handle_vm86_fault(a, b)
 #define release_vm86_irqs(a)
+#define vm86_disable_x86_umip()
 
 static inline int handle_vm86_trap(struct kernel_vm86_regs *a, long b, int c)
 {

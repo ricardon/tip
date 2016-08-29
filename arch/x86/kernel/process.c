@@ -233,6 +233,16 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 		 */
 		memset(tss->io_bitmap, 0xff, prev->io_bitmap_max);
 	}
+
+#if defined(CONFIG_VM86) && defined(CONFIG_X86_INTEL_UMIP)
+	if (next->vm86 && next->vm86->saved_sp0 && next->vm86->disable_x86_umip)
+		cr4_clear_bits(X86_CR4_UMIP);
+	else {
+		if (static_cpu_has(X86_FEATURE_UMIP))
+			cr4_set_bits(X86_CR4_UMIP);
+	}
+#endif
+
 	propagate_user_return_notify(prev_p, next_p);
 }
 

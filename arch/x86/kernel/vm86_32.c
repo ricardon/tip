@@ -90,6 +90,14 @@
 #define SAFE_MASK	(0xDD5)
 #define RETURN_MASK	(0xDFF)
 
+static bool disable_x86_umip;
+
+void __init vm86_disable_x86_umip(void)
+{
+	if (cpu_feature_enabled(X86_FEATURE_UMIP))
+		disable_x86_umip = true;
+}
+
 void save_v86_state(struct kernel_vm86_regs *regs, int retval)
 {
 	struct tss_struct *tss;
@@ -156,6 +164,12 @@ void save_v86_state(struct kernel_vm86_regs *regs, int retval)
 	lazy_load_gs(vm86->regs32.gs);
 
 	regs->pt.ax = retval;
+
+
+	/* Always enable UMIP if supported */
+	if (cpu_feature_enabled(X86_FEATURE_UMIP) &&
+	    static_cpu_has(X86_FEATURE_UMIP))
+		cr4_set_bits(X86_CR4_UMIP);
 }
 
 static void mark_screen_rdonly(struct mm_struct *mm)
@@ -370,6 +384,12 @@ static long do_sys_vm86(struct vm86plus_struct __user *user_vm86, bool plus)
 
 	if (vm86->flags & VM86_SCREEN_BITMAP)
 		mark_screen_rdonly(tsk->mm);
+
+	if (cpu_feature_enabled(X86_FEATURE_UMIP)) {
+		vm86->disable_x86_umip = disable_x86_umip;
+		if (disable_x86_umip)
+			cr4_clear_bits(X86_CR4_UMIP);
+	}
 
 	memcpy((struct kernel_vm86_regs *)regs, &vm86regs, sizeof(vm86regs));
 	force_iret();
