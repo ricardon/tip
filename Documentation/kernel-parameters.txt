@@ -4201,6 +4201,11 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			Note that genuine overcurrent events won't be
 			reported either.
 
+	umip=		[X86] Configure User-Mode Instruction Prevention
+			no = Disable UMIP even if it is supported by processor
+			novm86 = Disable UMIP only for virtual-8086 tasks; UMIP
+				 remains active for all other tasks.
+
 	unknown_nmi_panic
 			[X86] Cause panic on unknown NMI.
 

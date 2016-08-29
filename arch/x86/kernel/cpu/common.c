@@ -44,6 +44,7 @@
 #include <asm/pat.h>
 #include <asm/microcode.h>
 #include <asm/microcode_intel.h>
+#include <asm/vm86.h>
 
 #ifdef CONFIG_X86_LOCAL_APIC
 #include <asm/uv/uv.h>
@@ -304,6 +305,52 @@ static __always_inline void setup_smap(struct cpuinfo_x86 *c)
 		cr4_clear_bits(X86_CR4_SMAP);
 #endif
 	}
+}
+
+static __init int setup_config_umip(char *arg)
+{
+	char info[] = "x86/umip: Intel User-Mode Execution Prevention (UMIP) disabled";
+	char error[] = "x86/umip: invalid kernel parameter. Valid parameters: umip=no";
+
+	/* do not emit a message if the feature is not present */
+	if (!boot_cpu_has(X86_FEATURE_UMIP))
+		return 1;
+
+	/* do not emit a message if the feature is not enabled */
+	if (!cpu_feature_enabled(X86_FEATURE_UMIP))
+		return 1;
+
+	if (parse_option_str(arg, "no")) {
+		setup_clear_cpu_cap(X86_FEATURE_UMIP);
+		pr_info("%s\n", info);
+		return 1;
+	}
+
+	if (IS_ENABLED(CONFIG_VM86) && parse_option_str(arg, "novm86")) {
+		vm86_disable_x86_umip();
+		pr_info("%s for vm86\n", info);
+		return 1;
+	}
+
+	if (IS_ENABLED(CONFIG_VM86))
+		pr_warn("%s, umip=novm86\n", error);
+	else
+		pr_warn("%s\n", error);
+	return 0;
+}
+__setup("umip=", setup_config_umip);
+
+static __always_inline void setup_umip(struct cpuinfo_x86 *c)
+{
+	if (cpu_feature_enabled(X86_FEATURE_UMIP) &&
+	    cpu_has(c, X86_FEATURE_UMIP))
+		cr4_set_bits(X86_CR4_UMIP);
+	else
+		/*
+		 * Make sure UMIP is disabled in case it was enabled in a
+		 * previous boot (e.g., via kexec).
+		 */
+		cr4_clear_bits(X86_CR4_UMIP);
 }
 
 /*
@@ -1037,9 +1084,10 @@ static void identify_cpu(struct cpuinfo_x86 *c)
 	/* Disable the PN if appropriate */
 	squash_the_stupid_serial_number(c);
 
-	/* Set up SMEP/SMAP */
+	/* Set up SMEP/SMAP/UMIP */
 	setup_smep(c);
 	setup_smap(c);
+	setup_umip(c);
 
 	/*
 	 * The vendor-specific functions might have changed features.
