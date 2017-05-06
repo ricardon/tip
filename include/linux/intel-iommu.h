@@ -520,6 +520,12 @@ extern struct intel_iommu *intel_svm_device_to_iommu(struct device *dev);
 extern unsigned long intel_iommu_get_pts(struct intel_iommu *iommu);
 #endif
 
+#ifdef CONFIG_INTEL_IOMMU_DEBUG
+extern void intel_iommu_debugfs_init(void);
+#else
+static inline void intel_iommu_debugfs_init(void) {}
+#endif /* CONFIG_INTEL_IOMMU_DEBUG */
+
 extern const struct attribute_group *intel_iommu_groups[];
 extern bool context_present(struct context_entry *context);
 extern struct context_entry *iommu_context_addr(struct intel_iommu *iommu,
