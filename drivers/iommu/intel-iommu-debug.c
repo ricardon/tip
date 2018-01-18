@@ -68,6 +68,36 @@ static const struct iommu_regset iommu_regs[] = {
 	IOMMU_REGSET_ENTRY(MTRRDEF)
 };
 
+#ifdef CONFIG_INTEL_IOMMU_SVM
+static void pasid_tbl_entry_show(struct seq_file *m, struct intel_iommu *iommu)
+{
+	int pasid_size = 0, i;
+
+	if (!ecap_pasid(iommu->ecap))
+		return;
+
+	pasid_size = intel_iommu_get_pts(iommu);
+	seq_printf(m, "Pasid Table Address: %p\n", iommu->pasid_table);
+
+	if (!iommu->pasid_table)
+		return;
+
+	seq_printf(m, "Pasid Table Entries for domain %d:\n", iommu->segment);
+	seq_puts(m, "[Entry]\t\tContents\n");
+
+	/* Publish the pasid table entries here */
+	for (i = 0; i < pasid_size; i++) {
+		if (!iommu->pasid_table[i].val)
+			continue;
+
+		seq_printf(m, "[%d]\t\t%04llx\n", i, iommu->pasid_table[i].val);
+	}
+}
+#else /* CONFIG_INTEL_IOMMU_SVM */
+static inline void
+pasid_tbl_entry_show(struct seq_file *m, struct intel_iommu *iommu) {}
+#endif /* CONFIG_INTEL_IOMMU_SVM */
+
 static void ctx_tbl_entry_show(struct seq_file *m, struct intel_iommu *iommu,
 			       int bus, bool ext)
 {
@@ -103,6 +133,7 @@ static void ctx_tbl_entry_show(struct seq_file *m, struct intel_iommu *iommu,
 			   iommu->segment, bus, PCI_SLOT(ctx), PCI_FUNC(ctx),
 			   context[1].lo, context[1].hi);
 	}
+	pasid_tbl_entry_show(m, iommu);
 out:
 	spin_unlock_irqrestore(&iommu->lock, flags);
 }
