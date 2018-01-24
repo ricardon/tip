@@ -71,6 +71,8 @@
 #define	DMAR_PEDATA_REG	0xe4	/* Page request event interrupt data register */
 #define	DMAR_PEADDR_REG	0xe8	/* Page request event interrupt addr register */
 #define	DMAR_PEUADDR_REG 0xec	/* Page request event Upper address register */
+#define	DMAR_MTRRCAP_REG 0x100	/* Memory type range register capability register */
+#define	DMAR_MTRRDEF_REG 0x108	/* Memory type range register default type register */
 
 #define OFFSET_STRIDE		(9)
 

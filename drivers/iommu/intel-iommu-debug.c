@@ -25,6 +25,49 @@
 
 #define TOTAL_BUS_NR	256	/* full bus range */
 
+struct iommu_regset {
+	int offset;
+	const char *regs;
+};
+
+#define IOMMU_REGSET_ENTRY(_reg_)					\
+	{ DMAR_##_reg_##_REG, __stringify(_reg_) }
+static const struct iommu_regset iommu_regs[] = {
+	IOMMU_REGSET_ENTRY(VER),
+	IOMMU_REGSET_ENTRY(CAP),
+	IOMMU_REGSET_ENTRY(ECAP),
+	IOMMU_REGSET_ENTRY(GCMD),
+	IOMMU_REGSET_ENTRY(GSTS),
+	IOMMU_REGSET_ENTRY(RTADDR),
+	IOMMU_REGSET_ENTRY(CCMD),
+	IOMMU_REGSET_ENTRY(FSTS),
+	IOMMU_REGSET_ENTRY(FECTL),
+	IOMMU_REGSET_ENTRY(FEDATA),
+	IOMMU_REGSET_ENTRY(FEADDR),
+	IOMMU_REGSET_ENTRY(FEUADDR),
+	IOMMU_REGSET_ENTRY(AFLOG),
+	IOMMU_REGSET_ENTRY(PMEN),
+	IOMMU_REGSET_ENTRY(PLMBASE),
+	IOMMU_REGSET_ENTRY(PLMLIMIT),
+	IOMMU_REGSET_ENTRY(PHMBASE),
+	IOMMU_REGSET_ENTRY(PHMLIMIT),
+	IOMMU_REGSET_ENTRY(IQH),
+	IOMMU_REGSET_ENTRY(IQT),
+	IOMMU_REGSET_ENTRY(IQA),
+	IOMMU_REGSET_ENTRY(ICS),
+	IOMMU_REGSET_ENTRY(IRTA),
+	IOMMU_REGSET_ENTRY(PQH),
+	IOMMU_REGSET_ENTRY(PQT),
+	IOMMU_REGSET_ENTRY(PQA),
+	IOMMU_REGSET_ENTRY(PRS),
+	IOMMU_REGSET_ENTRY(PECTL),
+	IOMMU_REGSET_ENTRY(PEDATA),
+	IOMMU_REGSET_ENTRY(PEADDR),
+	IOMMU_REGSET_ENTRY(PEUADDR),
+	IOMMU_REGSET_ENTRY(MTRRCAP),
+	IOMMU_REGSET_ENTRY(MTRRDEF)
+};
+
 static void ctx_tbl_entry_show(struct seq_file *m, struct intel_iommu *iommu,
 			       int bus, bool ext)
 {
@@ -103,6 +146,45 @@ static int dmar_translation_struct_show(struct seq_file *m, void *unused)
 }
 DEFINE_SHOW_ATTRIBUTE(dmar_translation_struct);
 
+static int iommu_regset_show(struct seq_file *m, void *unused)
+{
+	struct dmar_drhd_unit *drhd;
+	struct intel_iommu *iommu;
+	unsigned long long base;
+	int i, ret = 0;
+	u64 value;
+
+	rcu_read_lock();
+	for_each_active_iommu(iommu, drhd) {
+		if (!drhd->reg_base_addr) {
+			seq_puts(m, "IOMMU: Invalid base address\n");
+			ret = -EINVAL;
+			goto out;
+		}
+
+		base = drhd->reg_base_addr;
+		seq_printf(m, "DMAR: %s: Register Base Address %llx\n",
+			   iommu->name, base);
+		seq_puts(m, "Name\t\t\tOffset\t\tContents\n");
+		/*
+		 * Publish the contents of the 64-bit hardware registers
+		 * by adding the offset to the pointer (virtual address).
+		 */
+		for (i = 0 ; i < ARRAY_SIZE(iommu_regs); i++) {
+			value = dmar_readq(iommu->reg + iommu_regs[i].offset);
+			seq_printf(m, "%-8s\t\t0x%02x\t\t0x%016llx\n",
+				   iommu_regs[i].regs, iommu_regs[i].offset,
+				   value);
+		}
+		seq_putc(m, '\n');
+	}
+out:
+	rcu_read_unlock();
+
+	return ret;
+}
+DEFINE_SHOW_ATTRIBUTE(iommu_regset);
+
 void __init intel_iommu_debugfs_init(void)
 {
 	struct dentry *iommu_debug_root;
@@ -113,4 +195,6 @@ void __init intel_iommu_debugfs_init(void)
 
 	debugfs_create_file("dmar_translation_struct", 0444, iommu_debug_root,
 			    NULL, &dmar_translation_struct_fops);
+	debugfs_create_file("iommu_regset", 0444, iommu_debug_root, NULL,
+			    &iommu_regset_fops);
 }
