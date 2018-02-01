@@ -216,6 +216,96 @@ out:
 }
 DEFINE_SHOW_ATTRIBUTE(iommu_regset);
 
+#ifdef CONFIG_IRQ_REMAP
+static void ir_tbl_remap_entry_show(struct seq_file *m,
+				    struct intel_iommu *iommu)
+{
+	struct irte *ri_entry;
+	int idx;
+
+	seq_puts(m, " Index  SrcID DstID    Vct IRTE_high\t\tIRTE_low\n");
+
+	for (idx = 0; idx < INTR_REMAP_TABLE_ENTRIES; idx++) {
+		ri_entry = &iommu->ir_table->base[idx];
+		if (!ri_entry->present || ri_entry->p_pst)
+			continue;
+
+		seq_printf(m, " %d\t%04x  %08x %02x  %016llx\t%016llx\n", idx,
+			   ri_entry->sid, ri_entry->dest_id, ri_entry->vector,
+			   ri_entry->high, ri_entry->low);
+	}
+}
+
+static void ir_tbl_posted_entry_show(struct seq_file *m,
+				     struct intel_iommu *iommu)
+{
+	struct irte *pi_entry;
+	int idx;
+
+	seq_puts(m, " Index  SrcID PDA_high PDA_low  Vct IRTE_high\t\tIRTE_low\n");
+
+	for (idx = 0; idx < INTR_REMAP_TABLE_ENTRIES; idx++) {
+		pi_entry = &iommu->ir_table->base[idx];
+		if (!pi_entry->present || !pi_entry->p_pst)
+			continue;
+
+		seq_printf(m, " %d\t%04x  %08x %08x %02x  %016llx\t%016llx\n",
+			   idx, pi_entry->sid, pi_entry->pda_h,
+			   pi_entry->pda_l << 6, pi_entry->vector,
+			   pi_entry->high, pi_entry->low);
+	}
+}
+
+/*
+ * For active IOMMUs go through the Interrupt remapping
+ * table and print valid entries in a table format for
+ * Remapped and Posted Interrupts.
+ */
+static int ir_translation_struct_show(struct seq_file *m, void *unused)
+{
+	struct dmar_drhd_unit *drhd;
+	struct intel_iommu *iommu;
+	u64 irta;
+
+	rcu_read_lock();
+	for_each_active_iommu(iommu, drhd) {
+		if (!ecap_ir_support(iommu->ecap))
+			continue;
+
+		irta = dmar_readq(iommu->reg + DMAR_IRTA_REG) & VTD_PAGE_MASK;
+		seq_printf(m, "Remapped Interrupt supported on IOMMU: %s\n"
+			      " IR table address:%llx\n", iommu->name, irta);
+
+		if (iommu->ir_table && irta)
+			ir_tbl_remap_entry_show(m, iommu);
+		else
+			seq_puts(m, "Interrupt Remapping is not enabled\n");
+		seq_putc(m, '\n');
+	}
+
+	seq_puts(m, "****\n\n");
+
+	for_each_active_iommu(iommu, drhd) {
+		if (!cap_pi_support(iommu->cap))
+			continue;
+
+		irta = dmar_readq(iommu->reg + DMAR_IRTA_REG) & VTD_PAGE_MASK;
+		seq_printf(m, "Posted Interrupt supported on IOMMU: %s\n"
+			      " IR table address:%llx\n", iommu->name, irta);
+
+		if (iommu->ir_table && irta)
+			ir_tbl_posted_entry_show(m, iommu);
+		else
+			seq_puts(m, "Interrupt Remapping is not enabled\n");
+		seq_putc(m, '\n');
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(ir_translation_struct);
+#endif
+
 void __init intel_iommu_debugfs_init(void)
 {
 	struct dentry *iommu_debug_root;
@@ -228,4 +318,8 @@ void __init intel_iommu_debugfs_init(void)
 			    NULL, &dmar_translation_struct_fops);
 	debugfs_create_file("iommu_regset", 0444, iommu_debug_root, NULL,
 			    &iommu_regset_fops);
+#ifdef CONFIG_IRQ_REMAP
+	debugfs_create_file("ir_translation_struct", 0444, iommu_debug_root,
+			    NULL, &ir_translation_struct_fops);
+#endif
 }
