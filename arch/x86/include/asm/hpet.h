@@ -72,6 +72,11 @@ extern int is_hpet_enabled(void);
 extern int hpet_enable(void);
 extern void hpet_disable(void);
 extern unsigned int hpet_readl(unsigned int a);
+extern void hpet_writel(unsigned int d, unsigned int a);
+#ifdef CONFIG_X86_64
+extern unsigned long hpet_readq(unsigned int a);
+extern void hpet_writeq(unsigned long d, unsigned int a);
+#endif
 extern void force_hpet_resume(void);
 
 struct irq_data;
@@ -109,6 +114,11 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
 static inline int hpet_enable(void) { return 0; }
 static inline int is_hpet_enabled(void) { return 0; }
 #define hpet_readl(a) 0
+#define hpet_writel(d, a)
+#ifdef CONFIG_X86_64
+#define hpet_readq(a) 0
+#define hpet_writeq(d, a)
+#endif
 #define default_setup_hpet_msi	NULL
 
 #endif
