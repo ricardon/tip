@@ -72,6 +72,11 @@ extern int is_hpet_enabled(void);
 extern int hpet_enable(void);
 extern void hpet_disable(void);
 extern unsigned int hpet_readl(unsigned int a);
+extern void hpet_writel(unsigned int d, unsigned int a);
+#ifdef CONFIG_X86_64
+extern unsigned long hpet_readq(unsigned int a);
+extern void hpet_writeq(unsigned long d, unsigned int a);
+#endif
 extern void force_hpet_resume(void);
 
 struct irq_data;
