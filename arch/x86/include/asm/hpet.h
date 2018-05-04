@@ -64,6 +64,12 @@
 /* Timer used for the hardlockup detector */
 #define HPET_WD_TIMER_NR 2
 
+#define HPET_DEV_USED_BIT		2
+#define HPET_DEV_USED			(1 << HPET_DEV_USED_BIT)
+#define HPET_DEV_VALID			0x8
+#define HPET_DEV_FSB_CAP		0x1000
+#define HPET_DEV_PERI_CAP		0x2000
+
 /* hpet memory map physical address */
 extern unsigned long hpet_address;
 extern unsigned long force_hpet_address;
