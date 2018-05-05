@@ -1440,32 +1440,32 @@ static void print_other_cpu_stall(struct rcu_state *rsp, unsigned long gpnum)
 	 */
 	pr_err("INFO: %s detected stalls on CPUs/tasks:",
 	       rsp->name);
-	print_cpu_stall_info_begin();
+	//print_cpu_stall_info_begin();
 	rcu_for_each_leaf_node(rsp, rnp) {
 		raw_spin_lock_irqsave_rcu_node(rnp, flags);
 		ndetected += rcu_print_task_stall(rnp);
 		if (rnp->qsmask != 0) {
 			for_each_leaf_node_possible_cpu(rnp, cpu)
 				if (rnp->qsmask & leaf_node_cpu_bit(rnp, cpu)) {
-					print_cpu_stall_info(rsp, cpu);
+					//print_cpu_stall_info(rsp, cpu);
 					ndetected++;
 				}
 		}
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 	}
 
-	print_cpu_stall_info_end();
+	//print_cpu_stall_info_end();
 	for_each_possible_cpu(cpu)
 		totqlen += rcu_segcblist_n_cbs(&per_cpu_ptr(rsp->rda,
 							    cpu)->cblist);
-	pr_cont("(detected by %d, t=%ld jiffies, g=%ld, c=%ld, q=%lu)\n",
-	       smp_processor_id(), (long)(jiffies - rsp->gp_start),
-	       (long)rsp->gpnum, (long)rsp->completed, totqlen);
+	//pr_cont("(detected by %d, t=%ld jiffies, g=%ld, c=%ld, q=%lu)\n",
+	//       smp_processor_id(), (long)(jiffies - rsp->gp_start),
+	//       (long)rsp->gpnum, (long)rsp->completed, totqlen);
 	if (ndetected) {
-		rcu_dump_cpu_stacks(rsp);
+		//rcu_dump_cpu_stacks(rsp);
 
 		/* Complain about tasks blocking the grace period. */
-		rcu_print_detail_task_stall(rsp);
+		//rcu_print_detail_task_stall(rsp);
 	} else {
 		if (READ_ONCE(rsp->gpnum) != gpnum ||
 		    READ_ONCE(rsp->completed) == gpnum) {
@@ -1508,21 +1508,21 @@ static void print_cpu_stall(struct rcu_state *rsp)
 	 * RCU CPU stall warnings.
 	 */
 	pr_err("INFO: %s self-detected stall on CPU", rsp->name);
-	print_cpu_stall_info_begin();
+	//print_cpu_stall_info_begin();
 	raw_spin_lock_irqsave_rcu_node(rdp->mynode, flags);
-	print_cpu_stall_info(rsp, smp_processor_id());
+	//print_cpu_stall_info(rsp, smp_processor_id());
 	raw_spin_unlock_irqrestore_rcu_node(rdp->mynode, flags);
-	print_cpu_stall_info_end();
+	//print_cpu_stall_info_end();
 	for_each_possible_cpu(cpu)
 		totqlen += rcu_segcblist_n_cbs(&per_cpu_ptr(rsp->rda,
 							    cpu)->cblist);
-	pr_cont(" (t=%lu jiffies g=%ld c=%ld q=%lu)\n",
-		jiffies - rsp->gp_start,
-		(long)rsp->gpnum, (long)rsp->completed, totqlen);
+	//pr_cont(" (t=%lu jiffies g=%ld c=%ld q=%lu)\n",
+	//	jiffies - rsp->gp_start,
+	//	(long)rsp->gpnum, (long)rsp->completed, totqlen);
 
 	rcu_check_gp_kthread_starvation(rsp);
 
-	rcu_dump_cpu_stacks(rsp);
+	//rcu_dump_cpu_stacks(rsp);
 
 	raw_spin_lock_irqsave_rcu_node(rnp, flags);
 	if (ULONG_CMP_GE(jiffies, READ_ONCE(rsp->jiffies_stall)))

@@ -384,9 +384,12 @@ bool is_hardlockup(void)
 {
 	unsigned long hrint = __this_cpu_read(hrtimer_interrupts);
 
-	if (__this_cpu_read(hrtimer_interrupts_saved) == hrint)
+	if (__this_cpu_read(hrtimer_interrupts_saved) == hrint) {
+		ricardo_printk("[%d]HL?y\n", smp_processor_id());
 		return true;
+	}
 
+	ricardo_printk("[%d]HL?n\n", smp_processor_id());
 	__this_cpu_write(hrtimer_interrupts_saved, hrint);
 	return false;
 }
@@ -481,13 +484,14 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 			smp_processor_id(), duration,
 			current->comm, task_pid_nr(current));
 		__this_cpu_write(softlockup_task_ptr_saved, current);
+		#if 0
 		print_modules();
-		print_irqtrace_events(current);
+		//print_irqtrace_events(current);
 		if (regs)
 			show_regs(regs);
 		else
 			dump_stack();
-
+		#endif
 		if (softlockup_all_cpu_backtrace) {
 			/* Avoid generating two back traces for current
 			 * given that one is already made above

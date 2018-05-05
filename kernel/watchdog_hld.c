@@ -118,13 +118,14 @@ void inspect_for_hardlockups(struct pt_regs *regs)
 			return;
 
 		pr_emerg("Watchdog detected hard LOCKUP on cpu %d", this_cpu);
+		#if 0
 		print_modules();
 		print_irqtrace_events(current);
 		if (regs)
 			show_regs(regs);
 		else
 			dump_stack();
-
+		#endif
 		/*
 		 * Perform all-CPU dump only once to avoid multiple hardlockups
 		 * generating interleaving traces
