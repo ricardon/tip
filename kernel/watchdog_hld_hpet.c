@@ -298,6 +298,7 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	struct hpet_hld_data *hdata = hld_data;
 	unsigned int use_fsb, cpu;
 
+	ricardo_printk("CPU[%d]\n", smp_processor_id());
 	/*
 	 * If FSB delivery mode is used, the timer interrupt is programmed as
 	 * edge-triggered and there is no need to check the ISR register.
