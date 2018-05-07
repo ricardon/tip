@@ -132,7 +132,6 @@ static struct nmi_watchdog_ops hardlockup_detector_noop = {
  */
 int __weak watchdog_nmi_enable(unsigned int cpu)
 {
-	ricardo_printk("here\n");
 	if (nmi_wd_ops && nmi_wd_ops->enable)
 		nmi_wd_ops->enable();
 
@@ -141,7 +140,6 @@ int __weak watchdog_nmi_enable(unsigned int cpu)
 
 void __weak watchdog_nmi_disable(unsigned int cpu)
 {
-	ricardo_printk("here\n");
 	if (nmi_wd_ops && nmi_wd_ops->disable)
 		nmi_wd_ops->disable();
 }
@@ -188,7 +186,6 @@ int __weak __init watchdog_nmi_probe(void)
  */
 void __weak watchdog_nmi_stop(void)
 {
-	ricardo_printk("here\n");
 	if (nmi_wd_ops && nmi_wd_ops->stop)
 		nmi_wd_ops->stop();
 }
@@ -206,7 +203,6 @@ void __weak watchdog_nmi_stop(void)
  */
 void __weak watchdog_nmi_start(void)
 {
-	ricardo_printk("here\n");
 	if (nmi_wd_ops && nmi_wd_ops->start)
 		nmi_wd_ops->start();
 }
@@ -695,7 +691,6 @@ static inline void lockup_detector_setup(void)
 
 static void __lockup_detector_cleanup(void)
 {
-	ricardo_printk("here\n");
 	lockdep_assert_held(&watchdog_mutex);
 	if (nmi_wd_ops && nmi_wd_ops->cleanup)
 		nmi_wd_ops->cleanup();
