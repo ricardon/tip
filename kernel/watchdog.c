@@ -385,11 +385,11 @@ bool is_hardlockup(void)
 	unsigned long hrint = __this_cpu_read(hrtimer_interrupts);
 
 	if (__this_cpu_read(hrtimer_interrupts_saved) == hrint) {
-		//ricardo_printk("[%d]HL?y\n", smp_processor_id());
+		ricardo_printk("[%d]HL?y\n", smp_processor_id());
 		return true;
 	}
 
-	//ricardo_printk("[%d]HL?n\n", smp_processor_id());
+	ricardo_printk("[%d]HL?n\n", smp_processor_id());
 	__this_cpu_write(hrtimer_interrupts_saved, hrint);
 	return false;
 }

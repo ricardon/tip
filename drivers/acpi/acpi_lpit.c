@@ -155,14 +155,8 @@ void acpi_init_lpit(void)
 
 	status = acpi_get_table(ACPI_SIG_LPIT, 0, (struct acpi_table_header **)&lpit);
 
-	ricardo_printk("LPIT status %d\n", status);
-
-	if (ACPI_FAILURE(status)) {
-		ricardo_printk("LPIT failed %d\n", status);
+	if (ACPI_FAILURE(status))
 		return;
-	}
-
-	ricardo_printk("LPIT success status %d\n", status);
 
 	lpit_begin = (u64)lpit + sizeof(*lpit);
 	lpit_process(lpit_begin, lpit_begin + lpit->header.length);
