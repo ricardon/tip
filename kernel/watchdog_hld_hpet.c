@@ -65,11 +65,21 @@ static void kick_timer(struct hpet_hld_data *hdata)
 	 * are able to update the comparator before the counter reaches such new
 	 * value.
 	 *
+	 * The timer must monitor each CPU every watch_thresh seconds. Hence the
+	 * timer expiration must be:
+	 *
+	 *    watch_thresh/N
+	 *
+	 * where N is the number of monitored CPUs.
+	 *
+	 * in order to monitor all the online CPUs. ticks_per_cpu gives the
+	 * number of ticks needed to meet the condition above.
+	 *
 	 * Let it wrap around if needed.
 	 */
 	count = get_count();
 
-	new_compare = count + watchdog_thresh * hdata->ticks_per_second;
+	new_compare = count + watchdog_thresh * hdata->ticks_per_cpu;
 
 	set_comparator(hdata, new_compare);
 }
@@ -157,6 +167,33 @@ static bool is_hpet_wdt_interrupt(struct hpet_hld_data *hdata)
 		return true;
 
 	return false;
+}
+
+/**
+ * update_ticks_per_cpu() - Update the number of HPET ticks per CPU
+ * @hdata:	struct with the timer's the ticks-per-second and CPU mask
+ *
+ * From the overall ticks-per-second of the timer, compute the number of ticks
+ * after which the timer should expire to monitor each CPU every watch_thresh
+ * seconds. The ticks-per-cpu quantity is computed using the number of CPUs that
+ * the watchdog currently monitors.
+ *
+ * Returns:
+ *
+ * None
+ *
+ */
+static void update_ticks_per_cpu(struct hpet_hld_data *hdata)
+{
+	unsigned int num_cpus = cpumask_weight(&hdata->monitored_mask);
+	unsigned long long temp = hdata->ticks_per_second;
+
+	/* Only update if there are monitored CPUs. */
+	if (!num_cpus)
+		return;
+
+	do_div(temp, num_cpus);
+	hdata->ticks_per_cpu = temp;
 }
 
 #if 0
@@ -399,6 +436,7 @@ static void hardlockup_detector_hpet_enable(void)
 	spin_lock(&hld_data->lock);
 
 	cpumask_set_cpu(cpu, &hld_data->monitored_mask);
+	update_ticks_per_cpu(hld_data);
 
 	/*
 	 * If this is the first CPU to be monitored, set everything in motion:
@@ -434,6 +472,7 @@ static void hardlockup_detector_hpet_disable(void)
 	spin_lock(&hld_data->lock);
 
 	cpumask_clear_cpu(smp_processor_id(), &hld_data->monitored_mask);
+	update_ticks_per_cpu(hld_data);
 
 	/* Only disable the timer if there are no more CPUs to monitor. */
 	if (!cpumask_weight(&hld_data->monitored_mask))
