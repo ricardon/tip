@@ -98,23 +98,42 @@ static inline void hardlockup_detector_disable(void) {}
 extern void arch_touch_nmi_watchdog(void);
 extern void hardlockup_detector_perf_stop(void);
 extern void hardlockup_detector_perf_restart(void);
-extern void hardlockup_detector_perf_disable(void);
-extern void hardlockup_detector_perf_enable(void);
-extern void hardlockup_detector_perf_cleanup(void);
-extern int hardlockup_detector_perf_init(void);
 #else
 static inline void hardlockup_detector_perf_stop(void) { }
 static inline void hardlockup_detector_perf_restart(void) { }
-static inline void hardlockup_detector_perf_disable(void) { }
-static inline void hardlockup_detector_perf_enable(void) { }
-static inline void hardlockup_detector_perf_cleanup(void) { }
 # if !defined(CONFIG_HAVE_NMI_WATCHDOG)
-static inline int hardlockup_detector_perf_init(void) { return -ENODEV; }
 static inline void arch_touch_nmi_watchdog(void) {}
-# else
-static inline int hardlockup_detector_perf_init(void) { return 0; }
 # endif
 #endif
+
+/**
+ * struct nmi_watchdog_ops - Operations performed by NMI watchdogs
+ * @init:		Initialize and configure the hardware resources of the
+ *			NMI watchdog.
+ * @enable:		Enable (i.e., monitor for hardlockups) the NMI watchdog
+ *			in the CPU in which the function is executed.
+ * @disable:		Disable (i.e., do not monitor for hardlockups) the NMI
+ *			in the CPU in which the function is executed.
+ * @start:		Start the the NMI watchdog in all CPUs. Used after the
+ *			parameters of the watchdog are updated. Optional if
+ *			such updates does not impact operation the NMI watchdog.
+ * @stop:		Stop the the NMI watchdog in all CPUs. Used before the
+ *			parameters of the watchdog are updated. Optional if
+ *			such updates does not impact the NMI watchdog.
+ * @cleanup:		Cleanup unneeded data structures of the NMI watchdog.
+ *			Used after updating the parameters of the watchdog.
+ *			Optional no cleanup is needed.
+ */
+struct nmi_watchdog_ops {
+	int	(*init)(void);
+	void	(*enable)(void);
+	void	(*disable)(void);
+	void	(*start)(void);
+	void	(*stop)(void);
+	void	(*cleanup)(void);
+};
+
+extern struct nmi_watchdog_ops hardlockup_detector_perf_ops;
 
 void watchdog_nmi_stop(void);
 void watchdog_nmi_start(void);

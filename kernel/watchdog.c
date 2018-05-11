@@ -44,6 +44,8 @@ int __read_mostly soft_watchdog_user_enabled = 1;
 int __read_mostly watchdog_thresh = 10;
 int __read_mostly nmi_watchdog_available;
 
+static struct nmi_watchdog_ops *nmi_wd_ops;
+
 struct cpumask watchdog_allowed_mask __read_mostly;
 
 struct cpumask watchdog_cpumask __read_mostly;
@@ -95,6 +97,23 @@ __setup("hardlockup_all_cpu_backtrace=", hardlockup_all_cpu_backtrace_setup);
 #endif /* CONFIG_HARDLOCKUP_DETECTOR */
 
 /*
+ * Define a non-existent hard lockup detector. It will be used only if
+ * no actual hardlockup detector was selected at built time.
+ */
+static inline int noop_hardlockup_detector_init(void)
+{
+	/* If arch has an NMI watchdog, pretend to initialize it. */
+	if (IS_ENABLED(CONFIG_HAVE_NMI_WATCHDOG))
+		return 0;
+	else
+		return -ENODEV;
+}
+
+static struct nmi_watchdog_ops hardlockup_detector_noop = {
+	.init = noop_hardlockup_detector_init,
+};
+
+/*
  * These functions can be overridden if an architecture implements its
  * own hardlockup detector.
  *
@@ -104,19 +123,33 @@ __setup("hardlockup_all_cpu_backtrace=", hardlockup_all_cpu_backtrace_setup);
  */
 int __weak watchdog_nmi_enable(unsigned int cpu)
 {
-	hardlockup_detector_perf_enable();
+	if (nmi_wd_ops && nmi_wd_ops->enable)
+		nmi_wd_ops->enable();
+
 	return 0;
 }
 
 void __weak watchdog_nmi_disable(unsigned int cpu)
 {
-	hardlockup_detector_perf_disable();
+	if (nmi_wd_ops && nmi_wd_ops->disable)
+		nmi_wd_ops->disable();
 }
 
 /* Return 0, if a NMI watchdog is available. Error code otherwise */
 int __weak __init watchdog_nmi_probe(void)
 {
-	return hardlockup_detector_perf_init();
+	int ret = -ENODEV;
+
+	if (IS_ENABLED(CONFIG_HARDLOCKUP_DETECTOR_PERF))
+		ret = hardlockup_detector_perf_ops.init();
+
+	if (!ret) {
+		nmi_wd_ops = &hardlockup_detector_perf_ops;
+		return ret;
+	}
+
+	nmi_wd_ops = &hardlockup_detector_noop;
+	return nmi_wd_ops->init();
 }
 
 /**
@@ -127,7 +160,11 @@ int __weak __init watchdog_nmi_probe(void)
  * update_variables();
  * watchdog_nmi_start();
  */
-void __weak watchdog_nmi_stop(void) { }
+void __weak watchdog_nmi_stop(void)
+{
+	if (nmi_wd_ops && nmi_wd_ops->stop)
+		nmi_wd_ops->stop();
+}
 
 /**
  * watchdog_nmi_start - Start the watchdog after reconfiguration
@@ -140,7 +177,11 @@ void __weak watchdog_nmi_stop(void) { }
  * - watchdog_thresh
  * - watchdog_cpumask
  */
-void __weak watchdog_nmi_start(void) { }
+void __weak watchdog_nmi_start(void)
+{
+	if (nmi_wd_ops && nmi_wd_ops->start)
+		nmi_wd_ops->start();
+}
 
 /**
  * lockup_detector_update_enable - Update the sysctl enable bit
@@ -627,7 +668,8 @@ static inline void lockup_detector_setup(void)
 static void __lockup_detector_cleanup(void)
 {
 	lockdep_assert_held(&watchdog_mutex);
-	hardlockup_detector_perf_cleanup();
+	if (nmi_wd_ops && nmi_wd_ops->cleanup)
+		nmi_wd_ops->cleanup();
 }
 
 /**
