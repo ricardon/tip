@@ -186,7 +186,7 @@ static int hardlockup_detector_event_create(void)
 /**
  * hardlockup_detector_perf_enable - Enable the local event
  */
-void hardlockup_detector_perf_enable(void)
+static void hardlockup_detector_perf_enable(void)
 {
 	if (hardlockup_detector_event_create())
 		return;
@@ -201,7 +201,7 @@ void hardlockup_detector_perf_enable(void)
 /**
  * hardlockup_detector_perf_disable - Disable the local event
  */
-void hardlockup_detector_perf_disable(void)
+static void hardlockup_detector_perf_disable(void)
 {
 	struct perf_event *event = this_cpu_read(watchdog_ev);
 
@@ -219,7 +219,7 @@ void hardlockup_detector_perf_disable(void)
  *
  * Called from lockup_detector_cleanup(). Serialized by the caller.
  */
-void hardlockup_detector_perf_cleanup(void)
+static void hardlockup_detector_perf_cleanup(void)
 {
 	int cpu;
 
@@ -281,7 +281,7 @@ void __init hardlockup_detector_perf_restart(void)
 /**
  * hardlockup_detector_perf_init - Probe whether NMI event is available at all
  */
-int __init hardlockup_detector_perf_init(void)
+static int __init hardlockup_detector_perf_init(void)
 {
 	int ret = hardlockup_detector_event_create();
 
@@ -291,5 +291,13 @@ int __init hardlockup_detector_perf_init(void)
 		perf_event_release_kernel(this_cpu_read(watchdog_ev));
 		this_cpu_write(watchdog_ev, NULL);
 	}
+
 	return ret;
 }
+
+struct nmi_watchdog_ops hardlockup_detector_perf_ops = {
+	.init		= hardlockup_detector_perf_init,
+	.enable		= hardlockup_detector_perf_enable,
+	.disable	= hardlockup_detector_perf_disable,
+	.cleanup	= hardlockup_detector_perf_cleanup,
+};
