@@ -208,6 +208,7 @@ struct irq_data {
  * IRQD_SINGLE_TARGET		- IRQ allows only a single affinity target
  * IRQD_DEFAULT_TRIGGER_SET	- Expected trigger already been set
  * IRQD_CAN_RESERVE		- Can use reservation mode
+ * IRQD_DELIVER_AS_NMI		- Deliver this interrupt as non-maskable
  */
 enum {
 	IRQD_TRIGGER_MASK		= 0xf,
@@ -230,6 +231,7 @@ enum {
 	IRQD_SINGLE_TARGET		= (1 << 24),
 	IRQD_DEFAULT_TRIGGER_SET	= (1 << 25),
 	IRQD_CAN_RESERVE		= (1 << 26),
+	IRQD_DELIVER_AS_NMI		= (1 << 27),
 };
 
 #define __irqd_to_state(d) ACCESS_PRIVATE((d)->common, state_use_accessors)
@@ -387,6 +389,16 @@ static inline void irqd_clr_can_reserve(struct irq_data *d)
 static inline bool irqd_can_reserve(struct irq_data *d)
 {
 	return __irqd_to_state(d) & IRQD_CAN_RESERVE;
+}
+
+static inline void irqd_set_deliver_as_nmi(struct irq_data *d)
+{
+	__irqd_to_state(d) |= IRQD_DELIVER_AS_NMI;
+}
+
+static inline bool irqd_deliver_as_nmi(struct irq_data *d)
+{
+	return __irqd_to_state(d) & IRQD_DELIVER_AS_NMI;
 }
 
 #undef __irqd_to_state
