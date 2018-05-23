@@ -567,6 +567,7 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 		irqd->chip_data = apicd;
 		irqd->hwirq = virq + i;
 		irqd_set_single_target(irqd);
+
 		/*
 		 * Prevent that any of these interrupts is invoked in
 		 * non interrupt context via e.g. generic_handle_irq()
@@ -576,6 +577,14 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 
 		/* Don't invoke affinity setter on deactivated interrupts */
 		irqd_set_affinity_on_activate(irqd);
+
+		/*
+		 * Initialize the delivery mode of this irq to match the
+		 * default delivery mode of the APIC. Children irq domains
+		 * may take the delivery mode from the individual irq
+		 * configuration rather than from the APIC driver.
+		 */
+		apicd->hw_irq_cfg.delivery_mode = apic->delivery_mode;
 
 		/*
 		 * Legacy vectors are already assigned when the IOAPIC
