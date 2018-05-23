@@ -46,7 +46,7 @@ static void irq_msi_compose_msg(struct irq_data *data, struct msi_msg *msg)
 	msg->data =
 		MSI_DATA_TRIGGER_EDGE |
 		MSI_DATA_LEVEL_ASSERT |
-		MSI_DATA_DELIVERY_FIXED |
+		MSI_DATA_DELIVERY_MODE(cfg->delivery_mode) |
 		MSI_DATA_VECTOR(cfg->vector);
 }
 
