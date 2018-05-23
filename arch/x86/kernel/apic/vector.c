@@ -574,6 +574,12 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 		irqd_set_affinity_on_activate(irqd);
 
 		/*
+		 * A delivery mode may be specified in the interrupt allocation
+		 * info. If not, use the delivery mode of the APIC.
+		 */
+		apicd->hw_irq_cfg.delivery_mode = apic->delivery_mode;
+
+		/*
 		 * Legacy vectors are already assigned when the IOAPIC
 		 * takes them over. They stay on the same vector. This is
 		 * required for check_timer() to work correctly as it might
