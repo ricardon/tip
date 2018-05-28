@@ -1137,7 +1137,7 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 {
 	struct irqaction *old, **old_ptr;
 	unsigned long flags, thread_mask = 0;
-	int ret, nested, shared = 0;
+	int ret, nested, shared = 0, deliver_as_nmi = 0;
 
 	if (!desc)
 		return -EINVAL;
@@ -1156,6 +1156,16 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	if (!(new->flags & IRQF_TRIGGER_MASK))
 		new->flags |= irqd_get_trigger_type(&desc->irq_data);
 
+	/* Only deliver as non-maskable interrupt if supported by chip. */
+	if (new->flags & IRQF_DELIVER_AS_NMI) {
+		if (desc->irq_data.chip->flags & IRQCHIP_CAN_DELIVER_AS_NMI) {
+			irqd_set_deliver_as_nmi(&desc->irq_data);
+			deliver_as_nmi = 1;
+		} else {
+			return -EINVAL;
+		}
+	}
+
 	/*
 	 * Check whether the interrupt nests into another interrupt
 	 * thread.
@@ -1166,6 +1176,13 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			ret = -EINVAL;
 			goto out_mput;
 		}
+
+		/* Don't allow nesting if interrupt will be delivered as NMI. */
+		if (deliver_as_nmi) {
+			ret = -EINVAL;
+			goto out_mput;
+		}
+
 		/*
 		 * Replace the primary handler which was provided from
 		 * the driver for non nested interrupt handling by the
@@ -1186,6 +1203,9 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 * thread.
 	 */
 	if (new->thread_fn && !nested) {
+		if (deliver_as_nmi)
+			goto out_mput;
+
 		ret = setup_irq_thread(new, irq, false);
 		if (ret)
 			goto out_mput;
