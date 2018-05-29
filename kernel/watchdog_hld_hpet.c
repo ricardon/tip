@@ -10,6 +10,7 @@
 #include <linux/nmi.h>
 #include <linux/hpet.h>
 #include <asm/hpet.h>
+#include <asm/irq_remapping.h>
 
 #undef pr_fmt
 #define pr_fmt(fmt) "NMI hpet watchdog: " fmt
@@ -184,6 +185,8 @@ static irqreturn_t hardlockup_detector_irq_handler(int irq, void *data)
 	if (!(hdata->flags & HPET_DEV_PERI_CAP))
 		kick_timer(hdata);
 
+	pr_err("This interrupt should not have happened. Ensure delivery mode is NMI.\n");
+
 	/* Acknowledge interrupt if in level-triggered mode */
 	if (!use_fsb)
 		hpet_writel(BIT(hdata->num), HPET_STATUS);
@@ -191,6 +194,47 @@ static irqreturn_t hardlockup_detector_irq_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 #endif
+
+/**
+ * hardlockup_detector_nmi_handler() - NMI Interrupt handler
+ * @val:	Attribute associated with the NMI. Not used.
+ * @regs:	Register values as seen when the NMI was asserted
+ *
+ * When an NMI is issued, look for hardlockups. If the timer is not periodic,
+ * kick it. The interrupt is always handled when if delivered via the
+ * Front-Side Bus.
+ *
+ * Returns:
+ *
+ * NMI_DONE if the HPET timer did not cause the interrupt. NMI_HANDLED
+ * otherwise.
+ */
+static int hardlockup_detector_nmi_handler(unsigned int val,
+					   struct pt_regs *regs)
+{
+	struct hpet_hld_data *hdata = hld_data;
+	unsigned int use_fsb;
+
+	/*
+	 * If FSB delivery mode is used, the timer interrupt is programmed as
+	 * edge-triggered and there is no need to check the ISR register.
+	 */
+	use_fsb = hdata->flags & HPET_DEV_FSB_CAP;
+
+	if (!use_fsb && !is_hpet_wdt_interrupt(hdata))
+		return NMI_DONE;
+
+	inspect_for_hardlockups(regs);
+
+	if (!(hdata->flags & HPET_DEV_PERI_CAP))
+		kick_timer(hdata);
+
+	/* Acknowledge interrupt if in level-triggered mode */
+	if (!use_fsb)
+		hpet_writel(BIT(hdata->num), HPET_STATUS);
+
+	return NMI_HANDLED;
+}
 
 /**
  * setup_irq_msi_mode() - Configure the timer to deliver an MSI interrupt
@@ -289,12 +333,21 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 	if (ret)
 		return ret;
 
+	/* Register the NMI handler, which will be the actual handler we use. */
+	ret = register_nmi_handler(NMI_LOCAL, hardlockup_detector_nmi_handler,
+				   0, "hpet_hld");
+	if (ret)
+		return ret;
+
 #if 0
 	/*
 	 * Request an interrupt to activate the irq in all the needed domains.
 	 */
 	ret = request_irq(hwirq, hardlockup_detector_irq_handler,
-			  IRQF_TIMER, "hpet_hld", hdata);
+			  IRQF_TIMER | IRQF_DELIVER_AS_NMI,
+			  "hpet_hld", hdata);
+	if (ret)
+		unregister_nmi_handler(NMI_LOCAL, "hpet_hld");
 
 #endif
 	return ret;

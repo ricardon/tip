@@ -203,7 +203,7 @@ int hpet_hardlockup_detector_assign_legacy_irq(struct hpet_hld_data *hdata)
 			break;
 		}
 
-		gsi = acpi_register_gsi(NULL, hwirq, ACPI_LEVEL_SENSITIVE,
+		gsi = acpi_register_gsi(NULL, hwirq, ACPI_EDGE_SENSITIVE,
 					ACPI_ACTIVE_LOW);
 		if (gsi > 0)
 			break;
