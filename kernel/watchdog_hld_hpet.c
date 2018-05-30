@@ -17,6 +17,7 @@
 #define pr_fmt(fmt) "NMI hpet watchdog: " fmt
 
 static struct hpet_hld_data *hld_data;
+static bool hardlockup_use_hpet;
 
 /**
  * get_count() - Get the current count of the HPET timer
@@ -488,6 +489,15 @@ static void hardlockup_detector_hpet_stop(void)
 	spin_unlock(&hld_data->lock);
 }
 
+static int __init hardlockup_detector_hpet_setup(char *str)
+{
+	if (strstr(str, "hpet"))
+		hardlockup_use_hpet = true;
+
+	return 0;
+}
+__setup("nmi_watchdog=", hardlockup_detector_hpet_setup);
+
 /**
  * hardlockup_detector_hpet_init() - Initialize the hardlockup detector
  *
@@ -501,6 +511,9 @@ static void hardlockup_detector_hpet_stop(void)
 static int __init hardlockup_detector_hpet_init(void)
 {
 	int ret;
+
+	if (!hardlockup_use_hpet)
+		return -EINVAL;
 
 	if (!is_hpet_enabled())
 		return -ENODEV;
