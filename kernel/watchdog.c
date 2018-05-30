@@ -145,6 +145,21 @@ int __weak __init watchdog_nmi_probe(void)
 {
 	int ret = -ENODEV;
 
+	/*
+	 * Try first with the HPET hardlockup detector. It will only
+	 * succeed if selected at build time and the nmi_watchdog
+	 * command-line parameter is configured. This ensure that the
+	 * perf-based detector is used by default, if selected at
+	 * build time.
+	 */
+	if (IS_ENABLED(CONFIG_HARDLOCKUP_DETECTOR_HPET))
+		ret = hardlockup_detector_hpet_ops.init();
+
+	if (!ret) {
+		nmi_wd_ops = &hardlockup_detector_hpet_ops;
+		return ret;
+	}
+
 	if (IS_ENABLED(CONFIG_HARDLOCKUP_DETECTOR_PERF))
 		ret = hardlockup_detector_perf_ops.init();
 
