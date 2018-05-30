@@ -1708,6 +1708,14 @@
 	hpet_mmap=	[X86, HPET_MMAP] Allow userspace to mmap HPET
 			registers.  Default set by CONFIG_HPET_MMAP_DEFAULT.
 
+	hpet_nmi_watchdog [X86, KNL]
+			Drive the NMI watchdog with an HPET channel. This option
+			has no effect if the NMI watchdog is not enabled.
+			The HPET NMI watchdog conflicts with the parameters
+			nohz_full, no_ipi_broadcast, and hpet=disable. If any
+			of these parameters is present the NMI watchdog will
+			fall back to the perf-driven implementation.
+
 	hugepages=	[HW] Number of HugeTLB pages to allocate at boot.
 			If this follows hugepagesz (below), it specifies
 			the number of pages of hugepagesz to be allocated.

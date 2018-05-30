@@ -39,6 +39,7 @@
 #include "apic/local.h"
 
 static struct hpet_hld_data *hld_data;
+static bool hardlockup_use_hpet;
 static u64 tsc_next_error;
 
 static void __init setup_hpet_channel(struct hpet_hld_data *hdata)
@@ -366,6 +367,19 @@ void hardlockup_detector_hpet_start(void)
 	enable_timer(hld_data);
 }
 
+/**
+ * hardlockup_detector_hpet_setup() - Parse command-line parameters
+ * @str:	A string containing the kernel command line
+ *
+ * If selected by the user, enable this hardlockup detector.
+ */
+static int __init hardlockup_detector_hpet_setup(char *str)
+{
+	hardlockup_use_hpet = true;
+	return 1;
+}
+__setup("hpet_nmi_watchdog", hardlockup_detector_hpet_setup);
+
 static const char hpet_hld_init_failed[] = "Initialization failed:";
 
 /**
@@ -381,6 +395,9 @@ static const char hpet_hld_init_failed[] = "Initialization failed:";
 int __init hardlockup_detector_hpet_init(void)
 {
 	int ret;
+
+	if (!hardlockup_use_hpet)
+		return -ENODEV;
 
 	if (!is_hpet_enabled()) {
 		pr_info("%s HPET unavailable\n", hpet_hld_init_failed);
