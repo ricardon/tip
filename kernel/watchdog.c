@@ -78,7 +78,7 @@ static int __init hardlockup_panic_setup(char *str)
 		nmi_watchdog_user_enabled = 0;
 	else if (!strncmp(str, "1", 1))
 		nmi_watchdog_user_enabled = 1;
-	return 1;
+	return 0;
 }
 __setup("nmi_watchdog=", hardlockup_panic_setup);
 
