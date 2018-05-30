@@ -1867,6 +1867,11 @@ static void ioapic_configure_entry(struct irq_data *irqd)
 	 * ioapic chip to verify that.
 	 */
 	if (irqd->chip == &ioapic_chip) {
+		if (irqd_deliver_as_nmi(irqd)) {
+			cfg->delivery_mode = dest_NMI;
+			mpd->entry.delivery_mode = cfg->delivery_mode;
+		}
+
 		mpd->entry.dest = cfg->dest_apicid;
 		mpd->entry.vector = cfg->vector;
 	}
@@ -1899,7 +1904,8 @@ static struct irq_chip ioapic_chip __read_mostly = {
 	.irq_eoi		= ioapic_ack_level,
 	.irq_set_affinity	= ioapic_set_affinity,
 	.irq_retrigger		= irq_chip_retrigger_hierarchy,
-	.flags			= IRQCHIP_SKIP_SET_WAKE,
+	.flags			= IRQCHIP_SKIP_SET_WAKE |
+				  IRQCHIP_CAN_DELIVER_AS_NMI,
 };
 
 static struct irq_chip ioapic_ir_chip __read_mostly = {
