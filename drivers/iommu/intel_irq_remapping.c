@@ -1128,10 +1128,14 @@ static void intel_ir_reconfigure_irte(struct irq_data *irqd, bool force)
 	struct irte *irte = &ir_data->irte_entry;
 	struct irq_cfg *cfg = irqd_cfg(irqd);
 
+	if (irqd_deliver_as_nmi(irqd))
+		cfg->delivery_mode = dest_NMI;
+
 	/*
 	 * Atomically updates the IRTE with the new destination, vector
 	 * and flushes the interrupt entry cache.
 	 */
+	irte->dlvry_mode = cfg->delivery_mode;
 	irte->vector = cfg->vector;
 	irte->dest_id = IRTE_DEST(cfg->dest_apicid);
 
@@ -1182,6 +1186,9 @@ static void intel_ir_compose_msi_msg(struct irq_data *irq_data,
 {
 	struct intel_ir_data *ir_data = irq_data->chip_data;
 
+	if (irqd_deliver_as_nmi(irq_data))
+		ir_data->irte_entry.dlvry_mode = dest_NMI;
+
 	*msg = ir_data->msi_entry;
 }
 
@@ -1227,6 +1234,7 @@ static struct irq_chip intel_ir_chip = {
 	.irq_set_affinity	= intel_ir_set_affinity,
 	.irq_compose_msi_msg	= intel_ir_compose_msi_msg,
 	.irq_set_vcpu_affinity	= intel_ir_set_vcpu_affinity,
+	.flags			= IRQCHIP_CAN_DELIVER_AS_NMI,
 };
 
 static void intel_irq_remapping_prepare_irte(struct intel_ir_data *data,
