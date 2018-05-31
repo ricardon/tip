@@ -10,6 +10,7 @@
 #include <linux/nmi.h>
 #include <linux/hpet.h>
 #include <asm/hpet.h>
+#include <asm/cpumask.h>
 #include <asm/irq_remapping.h>
 
 #undef pr_fmt
@@ -201,8 +202,8 @@ static irqreturn_t hardlockup_detector_irq_handler(int irq, void *data)
  * @regs:	Register values as seen when the NMI was asserted
  *
  * When an NMI is issued, look for hardlockups. If the timer is not periodic,
- * kick it. The interrupt is always handled when if delivered via the
- * Front-Side Bus.
+ * kick it. Move the interrupt to the next monitored CPU. The interrupt is
+ * always handled when if delivered via the Front-Side Bus.
  *
  * Returns:
  *
@@ -213,7 +214,7 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 					   struct pt_regs *regs)
 {
 	struct hpet_hld_data *hdata = hld_data;
-	unsigned int use_fsb;
+	unsigned int use_fsb, cpu;
 
 	/*
 	 * If FSB delivery mode is used, the timer interrupt is programmed as
@@ -224,7 +225,26 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	if (!use_fsb && !is_hpet_wdt_interrupt(hdata))
 		return NMI_DONE;
 
+	/* There are no CPUs to monitor. */
+	if (!cpumask_weight(&hdata->monitored_mask))
+		return NMI_HANDLED;
+
 	inspect_for_hardlockups(regs);
+
+	/*
+	 * Target a new CPU. Keep trying until we find a monitored CPU. CPUs
+	 * are addded and removed to this mask at cpu_up() and cpu_down(),
+	 * respectively. Thus, the interrupt should be able to be moved to
+	 * the next monitored CPU.
+	 */
+	spin_lock(&hld_data->lock);
+	for_each_cpu_wrap(cpu, &hdata->monitored_mask, smp_processor_id() + 1) {
+		if (!irq_set_affinity(hld_data->irq, cpumask_of(cpu)))
+			break;
+		pr_err("Could not assign interrupt to CPU %d. Trying with next present CPU.\n",
+		       cpu);
+	}
+	spin_unlock(&hld_data->lock);
 
 	if (!(hdata->flags & HPET_DEV_PERI_CAP))
 		kick_timer(hdata);
@@ -344,7 +364,7 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 	 * Request an interrupt to activate the irq in all the needed domains.
 	 */
 	ret = request_irq(hwirq, hardlockup_detector_irq_handler,
-			  IRQF_TIMER | IRQF_DELIVER_AS_NMI,
+			  IRQF_TIMER | IRQF_DELIVER_AS_NMI | IRQF_NOBALANCING,
 			  "hpet_hld", hdata);
 	if (ret)
 		unregister_nmi_handler(NMI_LOCAL, "hpet_hld");
