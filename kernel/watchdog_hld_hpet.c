@@ -13,11 +13,57 @@
 #include <asm/cpumask.h>
 #include <asm/irq_remapping.h>
 
+#include <linux/debugfs.h>
+
 #undef pr_fmt
 #define pr_fmt(fmt) "NMI hpet watchdog: " fmt
 
 static struct hpet_hld_data *hld_data;
 static bool hardlockup_use_hpet;
+
+static void dump_regs(struct hpet_hld_data *hdata, int i)
+{
+	ricardo_printk("Registers %x\n", i);
+	ricardo_printk("HPET_ID: 0x%lx\n", hpet_readq(HPET_ID));
+	ricardo_printk("HPET_CFG: 0x%lx\n", hpet_readq(HPET_CFG));
+	ricardo_printk("HPET_Tn_CFG(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CFG(hdata->num)));
+	ricardo_printk("HPET_Tn_CMP(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CMP(hdata->num)));
+	ricardo_printk("HPET_Tn_ROUTE(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_ROUTE(hdata->num)));
+}
+
+#define PR_REG(r) #r ": 0x%lx\n", hpet_readq(r)
+static int regset_dump_show(struct seq_file *m, void *data)
+{
+	seq_printf(m, "CPU mask: 0x%lx\n", *hld_data->monitored_mask.bits);
+	seq_printf(m, "Timer: %d\n", hld_data->num);
+	seq_printf(m, "IRQ: %d\n", hld_data->irq);
+	seq_printf(m, "Flags: %d\n", hld_data->flags);
+	seq_printf(m, "TPS: %lld\n", hld_data->ticks_per_second);
+	seq_printf(m, "TPC: %lld\n", hld_data->ticks_per_cpu);
+	seq_printf(m, "Registers\n");
+	seq_printf(m, PR_REG(HPET_ID));
+	seq_printf(m, PR_REG(HPET_CFG));
+	seq_printf(m, PR_REG(HPET_STATUS));
+	seq_printf(m, PR_REG(HPET_COUNTER));
+	seq_printf(m, PR_REG(HPET_Tn_CFG(2)));
+	seq_printf(m, PR_REG(HPET_Tn_CMP(2)));
+	seq_printf(m, PR_REG(HPET_Tn_ROUTE(2)));
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(regset_dump);
+
+void __init debugfs_init(struct hpet_hld_data *hdata)
+{
+	struct dentry *hpet_debug_root;
+
+	hpet_debug_root = debugfs_create_dir("hpet_wdt", NULL);
+	if (!hpet_debug_root)
+		return;
+
+	debugfs_create_file("regset", 0444, hpet_debug_root,
+			    hdata, &regset_dump_fops);
+}
 
 /**
  * get_count() - Get the current count of the HPET timer
@@ -545,6 +591,8 @@ static int __init hardlockup_detector_hpet_init(void)
 	spin_lock(&hld_data->lock);
 	cpumask_clear(&hld_data->monitored_mask);
 	spin_unlock(&hld_data->lock);
+
+	debugfs_init(hld_data);
 
 	return 0;
 }
