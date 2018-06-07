@@ -171,6 +171,41 @@ do {								\
 		_hpet_print_config(__func__, __LINE__);	\
 } while (0)
 
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
+{
+	struct hpet_hld_data *hdata;
+	u64 temp;
+	u32 cfg;
+
+	cfg = hpet_readl(HPET_Tn_CFG(HPET_WD_TIMER_NR));
+
+	if (!(cfg & HPET_TN_FSB_CAP))
+		return NULL;
+
+	hdata = kzalloc(sizeof(*hdata), GFP_KERNEL);
+	if (!hdata)
+		return NULL;
+
+	if (cfg & HPET_TN_PERIODIC_CAP)
+		hdata->has_periodic = true;
+
+	hdata->num = HPET_WD_TIMER_NR;
+
+	cfg = hpet_readl(HPET_PERIOD);
+
+	/*
+	 * hpet_get_ticks_per_sec() expects the contents of the general
+	 * capabilities register. The period is in the 32 most significant
+	 * bits.
+	 */
+	temp = (u64)cfg << HPET_COUNTER_CLK_PERIOD_SHIFT;
+	hdata->ticks_per_second = hpet_get_ticks_per_sec(temp);
+
+	return hdata;
+}
+#endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
+
 /*
  * When the hpet driver (/dev/hpet) is enabled, we need to reserve
  * timer 0 and timer 1 in case of RTC emulation. Timer 2 is reserved in case
