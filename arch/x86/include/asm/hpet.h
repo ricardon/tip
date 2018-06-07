@@ -124,6 +124,8 @@ struct hpet_hld_data {
 	u32		irq;
 	u32		flags;
 	u64		ticks_per_second;
+	struct cpumask	monitored_mask;
+	spinlock_t	lock; /* serialized access to monitored_mask */
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void);

@@ -135,6 +135,7 @@ struct nmi_watchdog_ops {
 };
 
 extern struct nmi_watchdog_ops hardlockup_detector_perf_ops;
+extern struct nmi_watchdog_ops hardlockup_detector_hpet_ops;
 
 void watchdog_nmi_stop(void);
 void watchdog_nmi_start(void);

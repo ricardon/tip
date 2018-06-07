@@ -354,6 +354,91 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 }
 
 /**
+ * hardlockup_detector_hpet_enable() - Enable the hardlockup detector
+ *
+ * The hardlockup detector is enabled for the CPU that executes the
+ * function. It is only enabled if such CPU is allowed to be monitored
+ * by the lockup detector.
+ *
+ * Returns:
+ *
+ * None
+ *
+ */
+static void hardlockup_detector_hpet_enable(void)
+{
+	struct cpumask *allowed = watchdog_get_allowed_cpumask();
+	unsigned int cpu = smp_processor_id();
+
+	if (!hld_data)
+		return;
+
+	if (!cpumask_test_cpu(cpu, allowed))
+		return;
+
+	spin_lock(&hld_data->lock);
+
+	cpumask_set_cpu(cpu, &hld_data->monitored_mask);
+
+	/*
+	 * If this is the first CPU to be monitored, set everything in motion:
+	 * move the interrupt to this CPU, kick and enable the timer.
+	 */
+	if (cpumask_weight(&hld_data->monitored_mask) == 1) {
+		if (irq_set_affinity(hld_data->irq, cpumask_of(cpu))) {
+			spin_unlock(&hld_data->lock);
+			pr_err("Unable to enable on CPU %d.!\n", cpu);
+			return;
+		}
+
+		kick_timer(hld_data);
+		enable(hld_data);
+	}
+
+	spin_unlock(&hld_data->lock);
+}
+
+/**
+ * hardlockup_detector_hpet_disable() - Disable the hardlockup detector
+ *
+ * The hardlockup detector is disabled for the CPU that executes the
+ * function.
+ *
+ * None
+ */
+static void hardlockup_detector_hpet_disable(void)
+{
+	if (!hld_data)
+		return;
+
+	spin_lock(&hld_data->lock);
+
+	cpumask_clear_cpu(smp_processor_id(), &hld_data->monitored_mask);
+
+	/* Only disable the timer if there are no more CPUs to monitor. */
+	if (!cpumask_weight(&hld_data->monitored_mask))
+		disable(hld_data);
+
+	spin_unlock(&hld_data->lock);
+}
+
+/**
+ * hardlockup_detector_hpet_stop() - Stop the NMI watchdog on all CPUs
+ *
+ * Returns:
+ *
+ * None
+ */
+static void hardlockup_detector_hpet_stop(void)
+{
+	disable(hld_data);
+
+	spin_lock(&hld_data->lock);
+	cpumask_clear(&hld_data->monitored_mask);
+	spin_unlock(&hld_data->lock);
+}
+
+/**
  * hardlockup_detector_hpet_init() - Initialize the hardlockup detector
  *
  * Only initialize and configure the detector if an HPET is available on the
@@ -391,5 +476,18 @@ static int __init hardlockup_detector_hpet_init(void)
 	 */
 	disable(hld_data);
 
+	spin_lock_init(&hld_data->lock);
+
+	spin_lock(&hld_data->lock);
+	cpumask_clear(&hld_data->monitored_mask);
+	spin_unlock(&hld_data->lock);
+
 	return 0;
 }
+
+struct nmi_watchdog_ops hardlockup_detector_hpet_ops = {
+	.init		= hardlockup_detector_hpet_init,
+	.enable		= hardlockup_detector_hpet_enable,
+	.disable	= hardlockup_detector_hpet_disable,
+	.stop		= hardlockup_detector_hpet_stop
+};
