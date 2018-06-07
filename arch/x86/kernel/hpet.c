@@ -6,6 +6,7 @@
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/i8253.h>
+#include <linux/acpi.h>
 #include <linux/slab.h>
 #include <linux/hpet.h>
 #include <linux/init.h>
@@ -33,6 +34,7 @@ bool					hpet_msi_disable;
 
 #ifdef CONFIG_PCI_MSI
 static unsigned int			hpet_num_timers;
+static struct irq_domain		*hpet_domain;
 #endif
 static void __iomem			*hpet_virt_address;
 
@@ -173,6 +175,119 @@ do {								\
 	if (hpet_verbose)					\
 		_hpet_print_config(__func__, __LINE__);	\
 } while (0)
+
+#ifdef CONFIG_HARDLOCKUP_DETECTOR_HPET
+static
+int hpet_hardlockup_detector_assign_legacy_irq(struct hpet_hld_data *hdata)
+{
+#if 0
+	unsigned long v;
+	int gsi, hwirq;
+
+	/* Obtain interrupt pins that can be used by this timer. */
+	v = hpet_readq(HPET_Tn_CFG(HPET_WD_TIMER_NR));
+	v = (v & Tn_INT_ROUTE_CAP_MASK) >> Tn_INT_ROUTE_CAP_SHIFT;
+
+	/*
+	 * In PIC mode, skip IRQ0-4, IRQ6-9, IRQ12-15 which is always used by
+	 * legacy device. In IO APIC mode, we skip all the legacy IRQS.
+	 */
+	if (acpi_irq_model == ACPI_IRQ_MODEL_PIC)
+		v &= ~0xf3df;
+	else
+		v &= ~0xffff;
+
+	for_each_set_bit(hwirq, &v, HPET_MAX_IRQ) {
+		if (hwirq >= NR_IRQS) {
+			hwirq = HPET_MAX_IRQ;
+			break;
+		}
+
+		gsi = acpi_register_gsi(NULL, hwirq, ACPI_LEVEL_SENSITIVE,
+					ACPI_ACTIVE_LOW);
+		if (gsi > 0)
+			break;
+	}
+
+	if (hwirq >= HPET_MAX_IRQ)
+		return -ENODEV;
+
+	hdata->irq = hwirq;
+	return 0;
+#endif
+}
+
+static int hpet_hardlockup_detector_assign_msi_irq(struct hpet_hld_data *hdata)
+{
+#if 0
+	struct hpet_dev *hdev;
+	int hwirq;
+
+	if (hpet_msi_disable)
+		return -ENODEV;
+
+	hdev = kzalloc(sizeof(*hdev), GFP_KERNEL);
+	if (!hdev)
+		return -ENOMEM;
+
+	hdev->flags |= HPET_DEV_FSB_CAP;
+	hdev->num = hdata->num;
+	sprintf(hdev->name, "hpet_hld");
+
+	/* Domain may exist if CPU does not have Always-Running APIC Timers. */
+	if (!hpet_domain) {
+		hpet_domain = hpet_create_irq_domain(hpet_blockid);
+		if (!hpet_domain)
+			return -EPERM;
+	}
+
+	hwirq = hpet_assign_irq(hpet_domain, hdev, hdev->num);
+	if (hwirq <= 0) {
+		kfree(hdev);
+		return -ENODEV;
+	}
+
+	hdata->irq = hwirq;
+	hdata->flags |= HPET_DEV_FSB_CAP;
+
+	hdev->irq = hwirq;
+#endif
+	return 0;
+}
+
+struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
+{
+	struct hpet_hld_data *hdata;
+	int ret = -ENODEV;
+	unsigned int cfg;
+
+	hdata = kzalloc(sizeof(*hdata), GFP_KERNEL);
+	if (!hdata)
+		return NULL;
+
+	hdata->num = HPET_WD_TIMER_NR;
+
+	cfg = hpet_readl(HPET_Tn_CFG(HPET_WD_TIMER_NR));
+
+	hdata->ticks_per_second = hpet_get_ticks_per_sec(hpet_readq(HPET_ID));
+
+	/* Try first an MSI interrupt or fallback to IO APIC. */
+	if (cfg & HPET_TN_FSB_CAP)
+		ret = hpet_hardlockup_detector_assign_msi_irq(hdata);
+
+	//if (!ret)
+		return hdata;
+#if 0
+	ret = hpet_hardlockup_detector_assign_legacy_irq(hdata);
+	if (ret) {
+		kfree(hdata);
+		return NULL;
+	}
+
+	return hdata;
+#endif
+}
+#endif /* CONFIG_HARDLOCKUP_DETECTOR_HPET */
 
 /*
  * When the hpet driver (/dev/hpet) is enabled, we need to reserve
@@ -447,7 +562,6 @@ static struct clock_event_device hpet_clockevent = {
 
 static DEFINE_PER_CPU(struct hpet_dev *, cpu_hpet_dev);
 static struct hpet_dev	*hpet_devs;
-static struct irq_domain *hpet_domain;
 
 void hpet_msi_unmask(struct irq_data *data)
 {
