@@ -851,6 +851,16 @@ config HARDLOCKUP_DETECTOR_PERF
 	bool
 	select SOFTLOCKUP_DETECTOR
 
+config HARDLOCKUP_DETECTOR_HPET
+	bool "Use HPET Timer for Hard Lockup Detection"
+	select SOFTLOCKUP_DETECTOR
+	select HARDLOCKUP_DETECTOR
+	depends on HPET_TIMER && HPET
+	help
+	  Say y to enable a hardlockup detector that is driven by an High-Precision
+	  Event Timer. In addition to selecting this option, the command-line
+	  parameter nmi_watchdog option. See Documentation/admin-guide/kernel-parameters.rst
+
 #
 # Enables a timestamp based low pass filter to compensate for perf based
 # hard lockup detection which runs too fast due to turbo modes.
