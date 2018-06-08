@@ -123,12 +123,24 @@ struct hpet_hld_data {
 	u32		num;
 	u32		flags;
 	u64		ticks_per_second;
+	u32		handling_cpu;
+	struct cpumask	cpu_monitored_mask;
+	struct msi_msg	msi_msg;
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void);
+extern int hardlockup_detector_hpet_init(void);
+extern void hardlockup_detector_hpet_stop(void);
+extern void hardlockup_detector_hpet_enable(void);
+extern void hardlockup_detector_hpet_disable(void);
 #else
 static inline struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 { return NULL; }
+static inline int hardlockup_detector_hpet_init(void)
+{ return -ENODEV; }
+static inline void hardlockup_detector_hpet_stop(void) {}
+static inline void hardlockup_detector_hpet_enable(void) {}
+static inline void hardlockup_detector_hpet_disable(void) {}
 #endif /* CONFIG_HARDLOCKUP_DETECTOR_HPET */
 
 #else /* CONFIG_HPET_TIMER */
