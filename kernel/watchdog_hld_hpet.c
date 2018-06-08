@@ -297,6 +297,7 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 {
 	struct hpet_hld_data *hdata = hld_data;
 	unsigned int use_fsb, cpu;
+	int ret;
 
 	/*
 	 * If FSB delivery mode is used, the timer interrupt is programmed as
@@ -320,12 +321,25 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	 * the next monitored CPU.
 	 */
 	spin_lock(&hld_data->lock);
+#if 0
 	for_each_cpu_wrap(cpu, &hdata->monitored_mask, smp_processor_id() + 1) {
-		if (!irq_set_affinity(hld_data->irq, cpumask_of(cpu)))
+		int ret;
+
+		ret = irq_set_affinity(hld_data->irq, cpumask_of(cpu));
+		if (!ret)
 			break;
 		pr_err("Could not assign interrupt to CPU %d. Trying with next present CPU.\n",
 		       cpu);
 	}
+#else
+	cpu = cpumask_next(smp_processor_id(), &hdata->monitored_mask);
+	if (cpu >= nr_cpu_ids)
+		cpu = cpumask_first(&hdata->monitored_mask);
+	//cpu = cpumask_next_wrap(smp_processor_id()-1,  &hdata->monitored_mask, smp_processor_id(), true);
+	ret = irq_set_affinity(hld_data->irq, cpumask_of(cpu));
+	if (ret)
+		pr_err("[%d]Could not assign interrupt to CPU %d. Trying with next present CPU.\n", smp_processor_id(), cpu);
+#endif
 	spin_unlock(&hld_data->lock);
 
 	if (!(hdata->flags & HPET_DEV_PERI_CAP))
@@ -445,6 +459,8 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 	if (ret)
 		unregister_nmi_handler(NMI_LOCAL, "hpet_hld");
 
+	ricardo_printk("ret of request_irq: %d\n", ret);
+
 	return ret;
 }
 
@@ -561,6 +577,7 @@ static int __init hardlockup_detector_hpet_init(void)
 	if (!hardlockup_use_hpet)
 		return -EINVAL;
 
+	ricardo_printk("hay HPET [%d]\n", smp_processor_id());
 	if (!is_hpet_enabled())
 		return -ENODEV;
 
@@ -568,6 +585,7 @@ static int __init hardlockup_detector_hpet_init(void)
 	if (!hld_data)
 		return -ENODEV;
 
+	ricardo_printk("hay timer %d\n", smp_processor_id());
 	/* Disable before configuring. */
 	disable(hld_data);
 
@@ -580,6 +598,7 @@ static int __init hardlockup_detector_hpet_init(void)
 	if (ret)
 		return -ENODEV;
 
+	ricardo_printk("hay irq %d\n", smp_processor_id());
 	/*
 	 * Timer might have been enabled when the interrupt was unmasked.
 	 * This should be done via the .enable operation.
@@ -592,7 +611,11 @@ static int __init hardlockup_detector_hpet_init(void)
 	cpumask_clear(&hld_data->monitored_mask);
 	spin_unlock(&hld_data->lock);
 
+	ricardo_printk("hay mask %d\n", smp_processor_id());
+
 	debugfs_init(hld_data);
+
+	ricardo_printk("hay hpet wdt %d\n", smp_processor_id());
 
 	return 0;
 }

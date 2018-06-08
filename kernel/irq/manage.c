@@ -187,10 +187,14 @@ int irq_do_set_affinity(struct irq_data *data, const struct cpumask *mask,
 	struct irq_chip *chip = irq_data_get_irq_chip(data);
 	int ret;
 
-	if (!chip || !chip->irq_set_affinity)
+	if (!chip || !chip->irq_set_affinity) {
+		ricardo_printk("error with chip[0x%lx]sa[0x%lx]\n", chip, chip->irq_set_affinity);
 		return -EINVAL;
+	}
 
 	ret = chip->irq_set_affinity(data, mask, force);
+	if (ret)
+		ricardo_printk("chip set affinity ret: %d\n", ret);
 	switch (ret) {
 	case IRQ_SET_MASK_OK:
 	case IRQ_SET_MASK_OK_DONE:
@@ -211,8 +215,10 @@ int irq_set_affinity_locked(struct irq_data *data, const struct cpumask *mask,
 	struct irq_desc *desc = irq_data_to_desc(data);
 	int ret = 0;
 
-	if (!chip || !chip->irq_set_affinity)
+	if (!chip || !chip->irq_set_affinity) {
+		ricardo_printk("error with chip[0x%lx]sa[0x%lx]\n", chip, chip->irq_set_affinity);
 		return -EINVAL;
+	}
 
 	if (irq_can_move_pcntxt(data)) {
 		ret = irq_do_set_affinity(data, mask, force);
@@ -236,8 +242,10 @@ int __irq_set_affinity(unsigned int irq, const struct cpumask *mask, bool force)
 	unsigned long flags;
 	int ret;
 
-	if (!desc)
+	if (!desc) {
+		ricardo_printk("desc is inval\n");
 		return -EINVAL;
+	}
 
 	raw_spin_lock_irqsave(&desc->lock, flags);
 	ret = irq_set_affinity_locked(irq_desc_get_irq_data(desc), mask, force);
