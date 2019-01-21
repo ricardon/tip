@@ -244,6 +244,7 @@ struct perf_event;
 #define PERF_PMU_CAP_EXCLUSIVE			0x10
 #define PERF_PMU_CAP_ITRACE			0x20
 #define PERF_PMU_CAP_HETEROGENEOUS_CPUS		0x40
+#define PERF_PMU_CAP_NO_EXCLUDE			0x80
 
 /**
  * struct pmu - generic performance monitoring unit
@@ -1003,6 +1004,15 @@ perf_event__output_id_sample(struct perf_event *event,
 
 extern void
 perf_log_lost_samples(struct perf_event *event, u64 lost);
+
+static inline bool event_has_any_exclude_flag(struct perf_event *event)
+{
+	struct perf_event_attr *attr = &event->attr;
+
+	return attr->exclude_idle || attr->exclude_user ||
+	       attr->exclude_kernel || attr->exclude_hv ||
+	       attr->exclude_guest || attr->exclude_host;
+}
 
 static inline bool is_sampling_event(struct perf_event *event)
 {
