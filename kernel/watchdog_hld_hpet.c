@@ -10,6 +10,7 @@
 #include <linux/nmi.h>
 #include <linux/hpet.h>
 #include <linux/slab.h>
+#include <asm/msidef.h>
 #include <asm/hpet.h>
 #include <asm/cpumask.h>
 #include <asm/irq_remapping.h>
@@ -20,21 +21,59 @@
 #define pr_fmt(fmt) "NMI hpet watchdog: " fmt
 
 static struct hpet_hld_data *hld_data;
+static unsigned long long tsc_next;
+
+
+#define NIBBLE4(x, s) (((0xffffL << (s*16)) & x) >> s*16)
+#define PR_REG(s, r) #s ": 0x%04lx:%04lx:%04lx:%04lx\n", NIBBLE4((r), 3), NIBBLE4((r), 2), NIBBLE4((r), 1), NIBBLE4((r), 0)
 
 static void dump_regs(struct hpet_hld_data *hdata, int i)
 {
 	ricardo_printk("Registers %x\n", i);
 	ricardo_printk("HPET_ID: 0x%lx\n", hpet_readq(HPET_ID));
 	ricardo_printk("HPET_CFG: 0x%lx\n", hpet_readq(HPET_CFG));
-	ricardo_printk("HPET_Tn_CFG(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CFG(hdata->num)));
-	ricardo_printk("HPET_Tn_CMP(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CMP(hdata->num)));
-	ricardo_printk("HPET_Tn_ROUTE(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_ROUTE(hdata->num)));
+	//ricardo_printk("HPET_Tn_CFG(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CFG(hdata->num)));
+	//ricardo_printk("HPET_Tn_CMP(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CMP(hdata->num)));
+	//ricardo_printk("HPET_Tn_ROUTE(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_ROUTE(hdata->num)));
 }
 
 struct hpet_debugfs_data {
 	unsigned char name[10];
 	unsigned int num;
 };
+
+static int set_destid_show(struct seq_file *m, void *data)
+{
+	struct hpet_hld_data *hdata = m->private;
+	struct msi_msg msg;
+	unsigned int destid, new_destid;
+
+	if (!hdata)
+		return -ENODEV;
+
+	msg.address_lo = hpet_readl(HPET_Tn_ROUTE(hdata->num) + 4);
+
+	//seq_printf(m, PR_REG(DATAREG, msg.address_lo));
+
+	//seq_printf(m, "msg.address_lo && MSI_ADDR_DEST_ID_MASK: %x\n",
+	//	   msg.address_lo & MSI_ADDR_DEST_ID_MASK);
+	//seq_printf(m, "msg.address_lo && MSI_ADDR_DEST_ID_MASK >> : %x\n",
+	//	   (msg.address_lo & MSI_ADDR_DEST_ID_MASK) >> MSI_ADDR_DEST_ID_SHIFT);
+	destid = (msg.address_lo & MSI_ADDR_DEST_ID_MASK) >> MSI_ADDR_DEST_ID_SHIFT;
+	new_destid = (destid + 1) % 8;
+	//seq_printf(m, "destid %d new_destid %d\n", destid, new_destid);
+
+	msg.address_lo &= ~0xff000;
+	msg.address_lo |= MSI_ADDR_DEST_ID(new_destid);
+
+	hpet_writel(msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
+	seq_printf(m, "DestID was %d, now is %d\n", destid, new_destid);
+
+	return 0;
+	
+}
+
+DEFINE_SHOW_ATTRIBUTE(set_destid);
 
 static int hld_data_debugfs_show(struct seq_file *m, void *data)
 {
@@ -44,9 +83,9 @@ static int hld_data_debugfs_show(struct seq_file *m, void *data)
 		return -ENODEV;
 
 	seq_printf(m, "CPU mask: 0x%lx\n", *hdata->monitored_mask.bits);
-	seq_printf(m, "Timer: %d\n", hdata->num);
-	seq_printf(m, "IRQ: %d\n", hdata->irq);
-	seq_printf(m, "Flags: %d\n", hdata->flags);
+	//seq_printf(m, "Timer: %d\n", hdata->num);
+	//seq_printf(m, "IRQ: %d\n", hdata->irq);
+	//seq_printf(m, "Flags: %d\n", hdata->flags);
 	seq_printf(m, "TPS: %lld\n", hdata->ticks_per_second);
 	seq_printf(m, "TPC: %lld\n", hdata->ticks_per_cpu);
 
@@ -55,8 +94,35 @@ static int hld_data_debugfs_show(struct seq_file *m, void *data)
 
 DEFINE_SHOW_ATTRIBUTE(hld_data_debugfs);
 
-#define NIBBLE4(x, s) (((0xffffL << (s*16)) & x) >> s*16)
-#define PR_REG(s, r) #s ": 0x%04lx:%04lx:%04lx:%04lx\n", NIBBLE4((r), 3), NIBBLE4((r), 2), NIBBLE4((r), 1), NIBBLE4((r), 0)
+static void kick_timer(struct hpet_hld_data *hdata);
+
+static int kick_timer_show(struct seq_file *m, void *data)
+{
+	struct hpet_hld_data *hdata = m->private;
+
+	if (!hdata)
+		return -ENODEV;
+
+	kick_timer(hdata);
+	seq_printf(m, "timer kicked\n");
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(kick_timer);
+
+static bool nmi_enable = 1;
+static int enable_nmi_show(struct seq_file *m, void *data)
+{
+	if (nmi_enable)		
+		nmi_enable = 0;
+	else
+		nmi_enable = 1;
+	seq_printf(m, "enabled NMIs\n");
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(enable_nmi);
+
 static int regset_dump_show(struct seq_file *m, void *data)
 {
 	unsigned long val;
@@ -144,6 +210,15 @@ void __init debugfs_init(struct hpet_hld_data *hdata)
 	debugfs_create_file("params", 0444, hpet_debug_root, hld_data,
 			    &hld_data_debugfs_fops);
 
+	debugfs_create_file("kick_timer", 0444, hpet_debug_root, hld_data,
+			    &kick_timer_fops);
+
+	debugfs_create_file("enable_nmi", 0444, hpet_debug_root, NULL,
+			    &enable_nmi_fops);
+
+	debugfs_create_file("set_destid", 0444, hpet_debug_root, hld_data,
+			    &set_destid_fops);
+
 	val = hpet_readq(HPET_ID);
 	timers = 1 + ((val & HPET_ID_NUMBER) >> HPET_ID_NUMBER_SHIFT);
 
@@ -200,6 +275,14 @@ static inline void set_comparator(struct hpet_hld_data *hdata,
 static void kick_timer(struct hpet_hld_data *hdata)
 {
 	unsigned long new_compare, count;
+	unsigned long long tsc_curr;
+	unsigned int cpu = smp_processor_id();
+
+	WARN(cpu != boot_cpu_data.cpu_index, "Kicking timer on non-BSP!!\n");
+
+	/* First, compute the predicted TSC value when HPET expires */
+	tsc_curr = rdtsc();
+	tsc_next = tsc_curr + watchdog_thresh * hld_data->tsc_ticks_per_cpu;
 
 	/*
 	 * Update the comparator in increments of watch_thresh seconds relative
@@ -224,6 +307,12 @@ static void kick_timer(struct hpet_hld_data *hdata)
 	new_compare = count + watchdog_thresh * hdata->ticks_per_cpu;
 
 	set_comparator(hdata, new_compare);
+#if 0
+	ricardo_printk("count 0x%lx:%lx:%lx:%lx\n", NIBBLE4(count, 3), NIBBLE4(count, 2),
+		       NIBBLE4(count, 1), NIBBLE4(count, 0));
+	ricardo_printk("cmp 0x%lx:%lx:%lx:%lx\n", NIBBLE4(new_compare, 3), NIBBLE4(new_compare, 2),
+		       NIBBLE4(new_compare, 1), NIBBLE4(new_compare, 0));
+#endif
 }
 
 /**
@@ -327,15 +416,22 @@ static bool is_hpet_wdt_interrupt(struct hpet_hld_data *hdata)
  */
 static void update_ticks_per_cpu(struct hpet_hld_data *hdata)
 {
-	unsigned int num_cpus = cpumask_weight(&hdata->monitored_mask);
+//	unsigned int num_cpus = cpumask_weight(&hdata->monitored_mask);
+	unsigned int num_cpus = cpumask_weight(watchdog_get_allowed_cpumask());
 	unsigned long long temp = hdata->ticks_per_second;
 
 	/* Only update if there are monitored CPUs. */
 	if (!num_cpus)
 		return;
 
+	temp = hdata->ticks_per_second;
 	do_div(temp, num_cpus);
 	hdata->ticks_per_cpu = temp;
+
+	temp = tsc_khz * 1000;
+	do_div(temp, num_cpus);
+	hdata->tsc_ticks_per_cpu = temp;
+
 }
 
 #if 0
@@ -389,16 +485,60 @@ static irqreturn_t hardlockup_detector_irq_handler(int irq, void *data)
  * NMI_DONE if the HPET timer did not cause the interrupt. NMI_HANDLED
  * otherwise.
  */
+static unsigned long long tsc_prev;
+#define MAX_DIFF 300000
+
 static int hardlockup_detector_nmi_handler(unsigned int val,
 					   struct pt_regs *regs)
 {
 	struct hpet_hld_data *hdata = hld_data;
-	unsigned int use_fsb, cpu;
+	//unsigned int use_fsb, cpu;
+
+	ricardo_printk("NMI %d %ps\n", smp_processor_id(), apic->send_IPI_allbutself);
+	if (nmi_enable) {
+		if (smp_processor_id() == boot_cpu_data.cpu_index) {
+			int next_cpu = smp_processor_id() + 1;
+			//struct cpumask *mask = cpumask_of(next_cpu);
+			unsigned long long tsc_curr = 0; 
+
+			tsc_curr = rdtsc();
+
+			/* Decide here if HPET caused NMI based on the TSC counter */
+			if (abs(tsc_curr - tsc_next) < MAX_DIFF) {
+				printk(KERN_ERR "***** YES HPET!!!! ");
+
+				/* do any operations needed here */
+				tsc_prev = tsc_curr;
+				//tsc_next = tsc_curr + watchdog_thresh * hdata->tsc_ticks_per_cpu;
+
+				ricardo_printk("TSC: curr %llu, diff: %llu, ttpsc: %llu, next %llu\n",
+					       tsc_curr, tsc_curr - tsc_prev, hdata->tsc_ticks_per_cpu,
+					       tsc_next);
+
+				//cpumask_set_cpu(next_cpu + 1, mask);
+				apic->send_IPI_allbutself(NMI_VECTOR);
+				//apic->send_IPI_mask(cpu_online_mask, NMI_VECTOR);
+				//apic->send_IPI_mask(mask, NMI_VECTOR);
+				//if (!(hdata->flags & HPET_DEV_PERI_CAP))
+				/*
+				 * TODO: we need to kick timer if either the threshold or
+				 * the number of monitored CPUs changed */
+				kick_timer(hdata);
+			} else {
+				ricardo_printk("out of range curr %llu next_exp %llu\n",
+				       	       tsc_curr, tsc_next);
+			}
+		} else {
+			ricardo_printk("Received IPI %d\n", smp_processor_id());
+			return NMI_HANDLED;
+		}
+	}
 
 	/*
 	 * If FSB delivery mode is used, the timer interrupt is programmed as
 	 * edge-triggered and there is no need to check the ISR register.
 	 */
+#if 0
 	use_fsb = hdata->flags & HPET_DEV_FSB_CAP;
 
 	if (!use_fsb && !is_hpet_wdt_interrupt(hdata))
@@ -407,9 +547,11 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	/* There are no CPUs to monitor. */
 	if (!cpumask_weight(&hdata->monitored_mask))
 		return NMI_HANDLED;
-
+#endif
+#if 0	
 	inspect_for_hardlockups(regs);
-
+#endif
+#if 0
 	/*
 	 * Target a new CPU. Keep trying until we find a monitored CPU. CPUs
 	 * are addded and removed to this mask at cpu_up() and cpu_down(),
@@ -424,15 +566,22 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 		       cpu);
 	}
 	spin_unlock(&hld_data->lock);
+#endif
+#if 0
+	ricardo_printk("en NMI\n");
 
-	if (!(hdata->flags & HPET_DEV_PERI_CAP))
+	if (!(hdata->flags & HPET_DEV_PERI_CAP) && (smp_processor_id() == boot_cpu_data.cpu_index))
 		kick_timer(hdata);
-
+	ricardo_printk("en NMI\n");
+#endif
+	
+#if 0
 	/* Acknowledge interrupt if in level-triggered mode */
 	if (!use_fsb)
 		hpet_writel(BIT(hdata->num), HPET_STATUS);
-
+#endif
 	return NMI_HANDLED;
+	//return NMI_DONE;
 }
 
 /**
@@ -448,7 +597,37 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
  */
 static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 {
-	unsigned int v;
+	unsigned int v, destid;
+	struct msi_msg msg;
+	struct cpuinfo_x86 *c = &cpu_data(1);
+
+	/*
+	 * TODO: populate extended APIC ID if x2apic. Not needed at all
+	 * since there is not space for it in the register.
+	 */
+	msg.address_hi = MSI_ADDR_BASE_HI;
+
+	msg.address_lo = MSI_ADDR_BASE_LO;
+	if (apic->irq_dest_mode == 0) {
+		msg.address_lo |= MSI_ADDR_DEST_MODE_PHYSICAL;
+		destid = boot_cpu_data.apicid;
+	} else {
+		msg.address_lo |= MSI_ADDR_DEST_MODE_LOGICAL;
+		destid = 1 << boot_cpu_data.cpu_index;
+	}
+
+	msg.address_lo |= MSI_ADDR_REDIRECTION_CPU;
+	msg.address_lo |= MSI_ADDR_DEST_ID(destid);
+
+	/*
+	 * On edge trigger, we don't care about assert level. Also,
+	 * since delivery mode is NMI, no irq vector is needed.
+	 */
+	msg.data = MSI_DATA_TRIGGER_EDGE | MSI_DATA_LEVEL_ASSERT |
+		   MSI_DATA_DELIVERY_NMI;
+
+	hpet_writel(msg.data, HPET_Tn_ROUTE(hdata->num));
+	hpet_writel(msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
 
 	v = hpet_readl(HPET_Tn_CFG(hdata->num));
 
@@ -461,6 +640,7 @@ static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 	 * interrupt is unmasked.
 	 */
 	v &= ~HPET_TN_LEVEL;
+	v |= HPET_TN_FSB;
 
 	hpet_writel(v, HPET_Tn_CFG(hdata->num));
 
@@ -521,7 +701,7 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 #if 0
 	int hwirq = hdata->irq,;
 #endif
-	int ret;
+	int ret = -ENODEV;
 
 	if (hdata->flags & HPET_DEV_FSB_CAP)
 		ret = setup_irq_msi_mode(hdata);
@@ -534,7 +714,7 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 
 	/* Register the NMI handler, which will be the actual handler we use. */
 	ret = register_nmi_handler(NMI_LOCAL, hardlockup_detector_nmi_handler,
-				   0, "hpet_hld");
+				   NMI_FLAG_FIRST, "hpet_hld");
 	if (ret)
 		return ret;
 
@@ -568,18 +748,22 @@ static void hardlockup_detector_hpet_enable(void)
 {
 	struct cpumask *allowed = watchdog_get_allowed_cpumask();
 	unsigned int cpu = smp_processor_id();
+	unsigned long long tsc_curr;
 
+	ricardo_printk("here1 #cpus %d\n", cpumask_weight(allowed));
 	if (!hld_data)
 		return;
 
+	ricardo_printk("here1\n");
 	if (!cpumask_test_cpu(cpu, allowed))
 		return;
 
 	spin_lock(&hld_data->lock);
 
+	ricardo_printk("here1\n");
 	cpumask_set_cpu(cpu, &hld_data->monitored_mask);
 	update_ticks_per_cpu(hld_data);
-
+#if 0
 	/*
 	 * If this is the first CPU to be monitored, set everything in motion:
 	 * move the interrupt to this CPU, kick and enable the timer.
@@ -594,6 +778,15 @@ static void hardlockup_detector_hpet_enable(void)
 		kick_timer(hld_data);
 		enable(hld_data);
 	}
+#endif
+	/* Compute next tsc target */
+	if (cpu == boot_cpu_data.cpu_index) { 
+		ricardo_printk("will kick timer\n");
+		kick_timer(hld_data);
+		enable(hld_data);
+		ricardo_printk("kicked timer now:%llu future:%llu\n", tsc_curr, tsc_next);
+	}
+	ricardo_printk("here1\n");
 
 	spin_unlock(&hld_data->lock);
 }
@@ -653,22 +846,28 @@ static int __init hardlockup_detector_hpet_init(void)
 {
 	int ret;
 
+	ricardo_printk("aqui\n");
 	if (!is_hpet_enabled())
 		return -ENODEV;
 
+	ricardo_printk("aqui\n");
 	hld_data = hpet_hardlockup_detector_assign_timer();
 	if (!hld_data)
 		return -ENODEV;
+
+	ricardo_printk("aqui\n");
 
 	/* Disable before configuring. */
 	disable(hld_data);
 
 	set_periodic(hld_data);
 
+	ricardo_printk("aqui\n");
 	ret = setup_hpet_irq(hld_data);
 	if (ret)
 		return -ENODEV;
 
+	ricardo_printk("aqui\n");
 	/* Set timer for the first time relative to the current count. */
 	kick_timer(hld_data);
 	/*
@@ -684,6 +883,14 @@ static int __init hardlockup_detector_hpet_init(void)
 	spin_unlock(&hld_data->lock);
 
 	debugfs_init(hld_data);
+
+	ricardo_printk("aqui\n");
+	ricardo_printk("tsc_khz %u\n", tsc_khz);
+	ricardo_printk("watchdog_thresh %u\n", watchdog_thresh);
+	if (apic)
+		ricardo_printk("print send_IPI %pS\n", apic->send_IPI_allbutself);
+	else
+		ricardo_printk("APIC is null!\n");
 
 	return 0;
 }

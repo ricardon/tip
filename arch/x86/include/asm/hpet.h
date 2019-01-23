@@ -121,12 +121,14 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
 #ifdef CONFIG_HARDLOCKUP_DETECTOR_HPET
 struct hpet_hld_data {
 	u32		num;
-	u32		irq;
+//	u32		irq;
 	u32		flags;
 	u64		ticks_per_second;
 	u64		ticks_per_cpu;
+	u64		tsc_ticks_per_cpu;
 	struct cpumask	monitored_mask;
 	spinlock_t	lock; /* serialized access to monitored_mask */
+//	struct hpet_dev *dev;
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void);

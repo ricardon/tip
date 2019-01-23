@@ -273,7 +273,8 @@ struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 
 	/* Try first an MSI interrupt or fallback to IO APIC. */
 	if (cfg & HPET_TN_FSB_CAP)
-		ret = hpet_hardlockup_detector_assign_msi_irq(hdata);
+		//ret = hpet_hardlockup_detector_assign_msi_irq(hdata);
+		hdata->flags |= HPET_DEV_FSB_CAP;
 
 	//if (!ret)
 		return hdata;
