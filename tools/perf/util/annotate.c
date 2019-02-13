@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include "util.h"
 #include "ui/ui.h"
 #include "sort.h"
@@ -16,6 +17,7 @@
 #include "color.h"
 #include "config.h"
 #include "cache.h"
+#include "map.h"
 #include "symbol.h"
 #include "units.h"
 #include "debug.h"
