@@ -22,7 +22,7 @@
 
 static struct hpet_hld_data *hld_data;
 static unsigned long long tsc_next;
-
+//static int __percpu *check_lockups;
 
 #define NIBBLE4(x, s) (((0xffffL << (s*16)) & x) >> s*16)
 #define PR_REG(s, r) #s ": 0x%04lx:%04lx:%04lx:%04lx\n", NIBBLE4((r), 3), NIBBLE4((r), 2), NIBBLE4((r), 1), NIBBLE4((r), 0)
@@ -515,8 +515,10 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 					       tsc_curr, tsc_curr - tsc_prev, hdata->tsc_ticks_per_cpu,
 					       tsc_next);
 
+				/* Indicate other CPUs that they should look for hardlockups */
+				cpumask_copy(&hdata->monitored_mask, watchdog_get_allowed_cpumask());
 				//cpumask_set_cpu(next_cpu + 1, mask);
-				apic->send_IPI_allbutself(NMI_VECTOR);
+				apic->send_IPI_mask_allbutself(&hdata->monitored_mask, NMI_VECTOR);
 				//apic->send_IPI_mask(cpu_online_mask, NMI_VECTOR);
 				//apic->send_IPI_mask(mask, NMI_VECTOR);
 				//if (!(hdata->flags & HPET_DEV_PERI_CAP))
@@ -524,13 +526,24 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 				 * TODO: we need to kick timer if either the threshold or
 				 * the number of monitored CPUs changed */
 				kick_timer(hdata);
+
+				inspect_for_hardlockups(regs);
 			} else {
 				ricardo_printk("out of range curr %llu next_exp %llu\n",
 				       	       tsc_curr, tsc_next);
 			}
 		} else {
-			ricardo_printk("Received IPI %d\n", smp_processor_id());
-			return NMI_HANDLED;
+			unsigned int cpu = smp_processor_id();
+
+			if (cpumask_test_and_clear_cpu(cpu, &hld_data->monitored_mask)) {
+				ricardo_printk("###Y### %d\n", cpu);
+				inspect_for_hardlockups(regs);
+				return NMI_HANDLED;
+			} else {
+				ricardo_printk("---N--- %d\n", cpu);
+				return NMI_DONE;
+			}
+			//return NMI_HANDLED;
 		}
 	}
 
@@ -610,13 +623,15 @@ static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 	msg.address_lo = MSI_ADDR_BASE_LO;
 	if (apic->irq_dest_mode == 0) {
 		msg.address_lo |= MSI_ADDR_DEST_MODE_PHYSICAL;
-		destid = boot_cpu_data.apicid;
+		//destid = boot_cpu_data.apicid;
 	} else {
 		msg.address_lo |= MSI_ADDR_DEST_MODE_LOGICAL;
-		destid = 1 << boot_cpu_data.cpu_index;
+		//destid = 1 << boot_cpu_data.cpu_index;
 	}
 
 	msg.address_lo |= MSI_ADDR_REDIRECTION_CPU;
+
+	destid = apic->calc_dest_apicid(boot_cpu_data.cpu_index);
 	msg.address_lo |= MSI_ADDR_DEST_ID(destid);
 
 	/*
@@ -750,18 +765,19 @@ static void hardlockup_detector_hpet_enable(void)
 	unsigned int cpu = smp_processor_id();
 	unsigned long long tsc_curr;
 
-	ricardo_printk("here1 #cpus %d\n", cpumask_weight(allowed));
+	ricardo_printk("here this:%d #cpus %d\n", smp_processor_id(), cpumask_weight(allowed));
 	if (!hld_data)
 		return;
 
+#if 0
 	ricardo_printk("here1\n");
 	if (!cpumask_test_cpu(cpu, allowed))
 		return;
-
+#endif
 	spin_lock(&hld_data->lock);
 
 	ricardo_printk("here1\n");
-	cpumask_set_cpu(cpu, &hld_data->monitored_mask);
+	//cpumask_set_cpu(cpu, &hld_data->monitored_mask);
 	update_ticks_per_cpu(hld_data);
 #if 0
 	/*
@@ -804,15 +820,17 @@ static void hardlockup_detector_hpet_disable(void)
 	if (!hld_data)
 		return;
 
+	ricardo_printk(" %d\n", smp_processor_id());
 	spin_lock(&hld_data->lock);
 
-	cpumask_clear_cpu(smp_processor_id(), &hld_data->monitored_mask);
+	//cpumask_clear_cpu(smp_processor_id(), &hld_data->monitored_mask);
 	update_ticks_per_cpu(hld_data);
 
+#if 0
 	/* Only disable the timer if there are no more CPUs to monitor. */
 	if (!cpumask_weight(&hld_data->monitored_mask))
 		disable(hld_data);
-
+#endif
 	spin_unlock(&hld_data->lock);
 }
 
@@ -867,6 +885,12 @@ static int __init hardlockup_detector_hpet_init(void)
 	if (ret)
 		return -ENODEV;
 
+#if 0
+	check_lockups = alloc_percpu(int);
+	if (!check_lockups)
+		return -ENOMEM;
+#endif
+
 	ricardo_printk("aqui\n");
 	/* Set timer for the first time relative to the current count. */
 	kick_timer(hld_data);
@@ -877,6 +901,7 @@ static int __init hardlockup_detector_hpet_init(void)
 	disable(hld_data);
 
 	spin_lock_init(&hld_data->lock);
+
 
 	spin_lock(&hld_data->lock);
 	cpumask_clear(&hld_data->monitored_mask);
