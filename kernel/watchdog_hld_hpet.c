@@ -278,7 +278,7 @@ static void kick_timer(struct hpet_hld_data *hdata)
 	unsigned long long tsc_curr;
 	unsigned int cpu = smp_processor_id();
 
-	WARN(cpu != boot_cpu_data.cpu_index, "Kicking timer on non-BSP!!\n");
+	WARN(cpu != hdata->handling_cpu, "Kicking timer on non-handling CPU!!\n");
 
 	/* First, compute the predicted TSC value when HPET expires */
 	tsc_curr = rdtsc();
@@ -496,7 +496,7 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 
 	ricardo_printk("NMI %d %ps\n", smp_processor_id(), apic->send_IPI_allbutself);
 	if (nmi_enable) {
-		if (smp_processor_id() == boot_cpu_data.cpu_index) {
+		if (smp_processor_id() == hdata->handling_cpu) {
 			int next_cpu = smp_processor_id() + 1;
 			//struct cpumask *mask = cpumask_of(next_cpu);
 			unsigned long long tsc_curr = 0; 
@@ -612,7 +612,7 @@ static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 {
 	unsigned int v, destid;
 	struct msi_msg msg;
-	struct cpuinfo_x86 *c = &cpu_data(1);
+	//struct cpuinfo_x86 *c = &cpu_data(1);
 
 	/*
 	 * TODO: populate extended APIC ID if x2apic. Not needed at all
@@ -631,7 +631,7 @@ static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 
 	msg.address_lo |= MSI_ADDR_REDIRECTION_CPU;
 
-	destid = apic->calc_dest_apicid(boot_cpu_data.cpu_index);
+	destid = apic->calc_dest_apicid(hdata->handling_cpu);
 	msg.address_lo |= MSI_ADDR_DEST_ID(destid);
 
 	/*
@@ -779,6 +779,8 @@ static void hardlockup_detector_hpet_enable(void)
 	ricardo_printk("here1\n");
 	//cpumask_set_cpu(cpu, &hld_data->monitored_mask);
 	update_ticks_per_cpu(hld_data);
+
+	hld_data->handling_cpu = cpumask_first(allowed);
 #if 0
 	/*
 	 * If this is the first CPU to be monitored, set everything in motion:
@@ -796,8 +798,9 @@ static void hardlockup_detector_hpet_enable(void)
 	}
 #endif
 	/* Compute next tsc target */
-	if (cpu == boot_cpu_data.cpu_index) { 
+	if (cpu == hld_data->handling_cpu) {
 		ricardo_printk("will kick timer\n");
+		setup_irq_msi_mode(hld_data);
 		kick_timer(hld_data);
 		enable(hld_data);
 		ricardo_printk("kicked timer now:%llu future:%llu\n", tsc_curr, tsc_next);
