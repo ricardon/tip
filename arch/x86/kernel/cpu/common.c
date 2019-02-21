@@ -312,10 +312,16 @@ static __init int setup_disable_smep(char *arg)
 }
 __setup("nosmep", setup_disable_smep);
 
+volatile unsigned long cr4_pin __ro_after_init;
+EXPORT_SYMBOL_GPL(cr4_pin);
+
 static __always_inline void setup_smep(struct cpuinfo_x86 *c)
 {
-	if (cpu_has(c, X86_FEATURE_SMEP))
+	if (cpu_has(c, X86_FEATURE_SMEP)) {
+		if (!(cr4_pin & X86_CR4_SMEP))
+			cr4_pin |= X86_CR4_SMEP;
 		cr4_set_bits(X86_CR4_SMEP);
+	}
 }
 
 static __init int setup_disable_smap(char *arg)
@@ -334,6 +340,8 @@ static __always_inline void setup_smap(struct cpuinfo_x86 *c)
 
 	if (cpu_has(c, X86_FEATURE_SMAP)) {
 #ifdef CONFIG_X86_SMAP
+		if (!(cr4_pin & X86_CR4_SMAP))
+			cr4_pin |= X86_CR4_SMAP;
 		cr4_set_bits(X86_CR4_SMAP);
 #else
 		cr4_clear_bits(X86_CR4_SMAP);
@@ -351,6 +359,8 @@ static __always_inline void setup_umip(struct cpuinfo_x86 *c)
 	if (!cpu_has(c, X86_FEATURE_UMIP))
 		goto out;
 
+	if (!(cr4_pin & X86_CR4_UMIP))
+		cr4_pin |= X86_CR4_UMIP;
 	cr4_set_bits(X86_CR4_UMIP);
 
 	pr_info_once("x86/cpu: User Mode Instruction Prevention (UMIP) activated\n");
