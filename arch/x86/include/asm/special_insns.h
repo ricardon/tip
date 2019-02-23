@@ -72,9 +72,22 @@ static inline unsigned long native_read_cr4(void)
 	return val;
 }
 
+extern volatile unsigned long cr4_pin;
+
 static inline void native_write_cr4(unsigned long val)
 {
+again:
+	val |= cr4_pin;
 	asm volatile("mov %0,%%cr4": : "r" (val), "m" (__force_order));
+	/*
+	 * If the MOV above was used directly as a ROP gadget we can
+	 * notice the lack of pinned bits in "val" and start the function
+	 * from the beginning to gain the cr4_pin bits for sure.
+	 */
+	if (WARN_ONCE((val & cr4_pin) != cr4_pin,
+		      "Attempt to unpin cr4 bits: %lx, cr4 bypass attack?!",
+		      ~val & cr4_pin))
+		goto again;
 }
 
 #ifdef CONFIG_X86_64
