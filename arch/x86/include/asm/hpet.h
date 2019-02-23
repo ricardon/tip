@@ -128,7 +128,9 @@ struct hpet_hld_data {
 	u64		tsc_ticks_per_cpu;
 	struct cpumask	monitored_mask;
 	u32		handling_cpu;
+	u8		id;
 	spinlock_t	lock; /* serialized access to monitored_mask */
+	struct msi_msg	msi_msg;
 //	struct hpet_dev *dev;
 };
 

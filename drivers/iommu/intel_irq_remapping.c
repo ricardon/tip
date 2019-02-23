@@ -20,6 +20,7 @@
 #include <asm/irq_remapping.h>
 #include <asm/pci-direct.h>
 #include <asm/msidef.h>
+#include <asm/hpet.h>
 
 #include "irq_remapping.h"
 
@@ -1491,3 +1492,69 @@ int dmar_ir_hotplug(struct dmar_drhd_unit *dmaru, bool insert)
 
 	return ret;
 }
+
+#ifdef CONFIG_HARDLOCKUP_DETECTOR_HPET
+int watchdog_hld_hpet_alloc_irq(struct hpet_hld_data *hdata)
+{
+	//struct intel_ir_data *data;
+	struct intel_ir_data data;
+	struct hpet_scope hpet = ir_hpet[0];
+	struct irq_cfg irq_cfg;
+	struct irq_alloc_info info;
+	int index;
+
+	if (!hpet.iommu) {
+		ricardo_printk(KERN_ERR "HPET IOMMU is null!\n");
+		return -ENODEV;
+	}
+
+#if 0
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data) {
+		ricardo_printk("failed to allocate irq data\n");
+		return -ENOMEM;
+	}
+#endif
+
+	down_read(&dmar_global_lock);
+	index =  alloc_irte(hpet.iommu, 0, &data.irq_2_iommu, 1);
+	up_read(&dmar_global_lock);
+	if (index < 0) {
+		ricardo_printk("Failed to allocate irte!\n");
+		return index;
+	}
+
+	info.type = X86_IRQ_ALLOC_TYPE_HPET;
+	info.hpet_id = hdata->id; 
+	/* Vector is not relevant if NMI is the delivery mode */
+	irq_cfg.vector = 0;
+	irq_cfg.delivery_mode = dest_NMI;
+	irq_cfg.dest_apicid = apic->calc_dest_apicid(hdata->handling_cpu);
+	intel_irq_remapping_prepare_irte(&data, &irq_cfg, &info, index, 0);
+	modify_irte(&data.irq_2_iommu, &data.irte_entry);
+	memcpy(&hdata->msi_msg, &data.msi_entry, sizeof(hdata->msi_msg));
+
+	ricardo_printk("IRTE: r_present:    %d\n", data.irte_entry.r_present);
+	ricardo_printk("IRTE: r_fpd:        %d\n", data.irte_entry.r_fpd);
+	ricardo_printk("IRTE: dst_mode:     %d\n", data.irte_entry.dst_mode);
+	ricardo_printk("IRTE: redir_hint:   %d\n", data.irte_entry.redir_hint);
+	ricardo_printk("IRTE: trigger_mode: %d\n", data.irte_entry.trigger_mode);
+	ricardo_printk("IRTE: dlvry_mode:   %d\n", data.irte_entry.dlvry_mode);
+	ricardo_printk("IRTE: r_avail:      %d\n", data.irte_entry.r_avail);
+	ricardo_printk("IRTE: r_res0:       %d\n", data.irte_entry.r_res0);
+	ricardo_printk("IRTE: r_vector:     %d\n", data.irte_entry.r_vector);
+	ricardo_printk("IRTE: r_res1:       %d\n", data.irte_entry.r_res1);
+	ricardo_printk("IRTE: dest_id:      %d\n", data.irte_entry.dest_id);
+	ricardo_printk("IRTE: sid:          %x\n", data.irte_entry.sid);
+	ricardo_printk("IRTE: sq:           %x\n", data.irte_entry.sq);
+	ricardo_printk("IRTE: svt:          %x\n", data.irte_entry.svt);
+	ricardo_printk("IRTE: _res3:        %x\n", data.irte_entry.__res3);
+
+	ricardo_printk("MSG address_hi      0x%x\n", data.msi_entry.address_hi);
+	ricardo_printk("MSG address_lo      0x%x\n", data.msi_entry.address_lo);
+	ricardo_printk("MSG data:           0x%x\n", data.msi_entry.data);
+
+	return 0;
+}
+#endif /* CONFIG_HARDLOCKUP_DETECTOR_HPET */
+

@@ -14,6 +14,7 @@
 #include <asm/hpet.h>
 #include <asm/cpumask.h>
 #include <asm/irq_remapping.h>
+#include <linux/dmar.h>
 
 #include <linux/debugfs.h>
 
@@ -597,6 +598,41 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	//return NMI_DONE;
 }
 
+static void compose_msi_msg(struct hpet_hld_data *hdata)
+{
+	struct msi_msg *msg = &hdata->msi_msg;
+	unsigned int destid;
+
+	/*
+	 * TODO: populate extended APIC ID if x2apic. Not needed at all
+	 * since there is not space for it in the register.
+	 */
+	msg->address_hi = MSI_ADDR_BASE_HI;
+
+	msg->address_lo = MSI_ADDR_BASE_LO;
+	/* TODO: use apic property to set irq_dest_mode */
+	if (apic->irq_dest_mode == 0) {
+		msg->address_lo |= MSI_ADDR_DEST_MODE_PHYSICAL;
+		//destid = boot_cpu_data.apicid;
+	} else {
+		msg->address_lo |= MSI_ADDR_DEST_MODE_LOGICAL;
+		//destid = 1 << boot_cpu_data.cpu_index;
+	}
+
+	msg->address_lo |= MSI_ADDR_REDIRECTION_CPU;
+
+	destid = apic->calc_dest_apicid(hdata->handling_cpu);
+	msg->address_lo |= MSI_ADDR_DEST_ID(destid);
+
+	/*
+	 * On edge trigger, we don't care about assert level. Also,
+	 * since delivery mode is NMI, no irq vector is needed.
+	 */
+	msg->data = MSI_DATA_TRIGGER_EDGE | MSI_DATA_LEVEL_ASSERT |
+		   MSI_DATA_DELIVERY_NMI;
+
+}
+
 /**
  * setup_irq_msi_mode() - Configure the timer to deliver an MSI interrupt
  * @data:	Data associated with the instance of the HPET timer to configure
@@ -611,38 +647,27 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 {
 	unsigned int v, destid;
-	struct msi_msg msg;
+	struct irq_alloc_info info;
+	struct irq_domain *parent;
+	int ret;
 	//struct cpuinfo_x86 *c = &cpu_data(1);
 
-	/*
-	 * TODO: populate extended APIC ID if x2apic. Not needed at all
-	 * since there is not space for it in the register.
-	 */
-	msg.address_hi = MSI_ADDR_BASE_HI;
-
-	msg.address_lo = MSI_ADDR_BASE_LO;
-	if (apic->irq_dest_mode == 0) {
-		msg.address_lo |= MSI_ADDR_DEST_MODE_PHYSICAL;
-		//destid = boot_cpu_data.apicid;
+	init_irq_alloc_info(&info, NULL);
+	info.type = X86_IRQ_ALLOC_TYPE_HPET;
+	info.hpet_id = hdata->id;
+	parent = irq_remapping_get_ir_irq_domain(&info);
+	if (parent) {
+		ret = watchdog_hld_hpet_alloc_irq(hdata);
+		if (ret)
+			return ret;
 	} else {
-		msg.address_lo |= MSI_ADDR_DEST_MODE_LOGICAL;
-		//destid = 1 << boot_cpu_data.cpu_index;
+		compose_msi_msg(hdata);
 	}
 
-	msg.address_lo |= MSI_ADDR_REDIRECTION_CPU;
-
-	destid = apic->calc_dest_apicid(hdata->handling_cpu);
-	msg.address_lo |= MSI_ADDR_DEST_ID(destid);
-
-	/*
-	 * On edge trigger, we don't care about assert level. Also,
-	 * since delivery mode is NMI, no irq vector is needed.
-	 */
-	msg.data = MSI_DATA_TRIGGER_EDGE | MSI_DATA_LEVEL_ASSERT |
-		   MSI_DATA_DELIVERY_NMI;
-
-	hpet_writel(msg.data, HPET_Tn_ROUTE(hdata->num));
-	hpet_writel(msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
+	ricardo_printk("will write MSI into HPET data %x addr %x\n",
+		       hdata->msi_msg.data, hdata->msi_msg.address_lo);	
+	hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->num));
+	hpet_writel(hdata->msi_msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
 
 	v = hpet_readl(HPET_Tn_CFG(hdata->num));
 
@@ -717,16 +742,18 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 	int hwirq = hdata->irq,;
 #endif
 	int ret = -ENODEV;
-
+#if 0
 	if (hdata->flags & HPET_DEV_FSB_CAP)
 		ret = setup_irq_msi_mode(hdata);
+#endif
 #if 0
 	else
 		ret = setup_irq_legacy_mode(hdata);
 #endif
+#if 0
 	if (ret)
 		return ret;
-
+#endif
 	/* Register the NMI handler, which will be the actual handler we use. */
 	ret = register_nmi_handler(NMI_LOCAL, hardlockup_detector_nmi_handler,
 				   NMI_FLAG_FIRST, "hpet_hld");

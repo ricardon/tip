@@ -27,6 +27,7 @@
 #include <linux/irqreturn.h>
 #include <linux/rwsem.h>
 #include <linux/rculist.h>
+#include <asm/hpet.h>
 
 struct acpi_dmar_header;
 
@@ -166,9 +167,16 @@ static inline int dmar_iommu_hotplug(struct dmar_drhd_unit *dmaru, bool insert)
 
 #ifdef CONFIG_IRQ_REMAP
 extern int dmar_ir_hotplug(struct dmar_drhd_unit *dmaru, bool insert);
+#ifdef CONFIG_HARDLOCKUP_DETECTOR_HPET
+extern int watchdog_hld_hpet_alloc_irq(struct hpet_hld_data *hdata);
+#endif /* CONFIG_HARDLOCKUP_DETECTOR_HPET */
 #else  /* CONFIG_IRQ_REMAP */
 static inline int dmar_ir_hotplug(struct dmar_drhd_unit *dmaru, bool insert)
 { return 0; }
+#ifdef CONFIG_HARDLOCKUP_DETECTOR_HPET
+static inline int watchdog_hld_hpet_alloc_irq(struct hpet_hld_data *hdata)
+{ return 0; }
+#endif /* CONFIG_HARDLOCKUP_DETECTOR_HPET */
 #endif /* CONFIG_IRQ_REMAP */
 
 extern bool dmar_platform_optin(void);

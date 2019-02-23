@@ -276,6 +276,7 @@ struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 		//ret = hpet_hardlockup_detector_assign_msi_irq(hdata);
 		hdata->flags |= HPET_DEV_FSB_CAP;
 
+	hdata->id = hpet_blockid; 
 	//if (!ret)
 		return hdata;
 #if 0
