@@ -131,9 +131,23 @@ struct hpet_hld_data {
 	u8		id;
 	spinlock_t	lock; /* serialized access to monitored_mask */
 	struct msi_msg	msi_msg;
+	void 		*ir_data;
 //	struct hpet_dev *dev;
 };
 
+#ifdef CONFIG_IRQ_REMAP
+extern int watchdog_hld_hpet_set_destid(struct hpet_hld_data *hdata);
+extern int watchdog_hld_hpet_alloc_irq(struct hpet_hld_data *hdata);
+#else
+static inline int watchdog_hld_hpet_set_destid(struct hpet_hld_data *hdata)
+{
+	return -ENODEV;
+}
+static inline int watchdog_hld_hpet_alloc_irq(struct hpet_hld_data *hdata)
+{
+	return -ENODEV;
+}
+#endif /* CONFIG_IQQ_REMAP */
 extern struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void);
 #else
 static inline struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)

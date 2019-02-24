@@ -506,7 +506,7 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 
 			/* Decide here if HPET caused NMI based on the TSC counter */
 			if (abs(tsc_curr - tsc_next) < MAX_DIFF) {
-				printk(KERN_ERR "***** YES HPET!!!! ");
+				printk(KERN_ERR "***** YES HPET CPU%d!!!! ", smp_processor_id());
 
 				/* do any operations needed here */
 				tsc_prev = tsc_curr;
@@ -601,7 +601,7 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 static void compose_msi_msg(struct hpet_hld_data *hdata)
 {
 	struct msi_msg *msg = &hdata->msi_msg;
-	unsigned int destid;
+	//unsigned int destid;
 
 	/*
 	 * TODO: populate extended APIC ID if x2apic. Not needed at all
@@ -621,8 +621,8 @@ static void compose_msi_msg(struct hpet_hld_data *hdata)
 
 	msg->address_lo |= MSI_ADDR_REDIRECTION_CPU;
 
-	destid = apic->calc_dest_apicid(hdata->handling_cpu);
-	msg->address_lo |= MSI_ADDR_DEST_ID(destid);
+	//destid = apic->calc_dest_apicid(hdata->handling_cpu);
+	//msg->address_lo |= MSI_ADDR_DEST_ID(destid);
 
 	/*
 	 * On edge trigger, we don't care about assert level. Also,
@@ -631,6 +631,37 @@ static void compose_msi_msg(struct hpet_hld_data *hdata)
 	msg->data = MSI_DATA_TRIGGER_EDGE | MSI_DATA_LEVEL_ASSERT |
 		   MSI_DATA_DELIVERY_NMI;
 
+}
+
+static bool irq_remapping_enabled(struct hpet_hld_data *hdata)
+{
+	struct irq_alloc_info info;
+
+	init_irq_alloc_info(&info, NULL);
+	info.type = X86_IRQ_ALLOC_TYPE_HPET;
+	info.hpet_id = hdata->id;
+	return !!irq_remapping_get_ir_irq_domain(&info);
+}
+
+static int update_handling_cpu(struct hpet_hld_data *hdata)
+{
+	unsigned int destid;
+	int ret;
+	if (irq_remapping_enabled(hdata)) {
+		ret = watchdog_hld_hpet_set_destid(hdata);
+		if (ret)
+			return ret;
+	} else {
+		hdata->msi_msg.address_lo &= ~ MSI_ADDR_DEST_ID_MASK;
+		destid = apic->calc_dest_apicid(hdata->handling_cpu);
+		hdata->msi_msg.address_lo |= MSI_ADDR_DEST_ID(destid);
+		ricardo_printk("will write MSI into HPET data %x addr %x\n",
+			       hdata->msi_msg.data, hdata->msi_msg.address_lo);	
+		hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->num));
+		hpet_writel(hdata->msi_msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
+	}
+
+	return 0;
 }
 
 /**
@@ -647,16 +678,9 @@ static void compose_msi_msg(struct hpet_hld_data *hdata)
 static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 {
 	unsigned int v, destid;
-	struct irq_alloc_info info;
-	struct irq_domain *parent;
 	int ret;
-	//struct cpuinfo_x86 *c = &cpu_data(1);
 
-	init_irq_alloc_info(&info, NULL);
-	info.type = X86_IRQ_ALLOC_TYPE_HPET;
-	info.hpet_id = hdata->id;
-	parent = irq_remapping_get_ir_irq_domain(&info);
-	if (parent) {
+	if (irq_remapping_enabled(hdata)) {
 		ret = watchdog_hld_hpet_alloc_irq(hdata);
 		if (ret)
 			return ret;
@@ -664,12 +688,11 @@ static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 		compose_msi_msg(hdata);
 	}
 
-	ricardo_printk("will write MSI into HPET data %x addr %x\n",
-		       hdata->msi_msg.data, hdata->msi_msg.address_lo);	
+	v = hpet_readl(HPET_Tn_CFG(hdata->num));
+
 	hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->num));
 	hpet_writel(hdata->msi_msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
 
-	v = hpet_readl(HPET_Tn_CFG(hdata->num));
 
 	/*
 	 * If FSB interrupt delivery is used, configure as edge-triggered
@@ -742,10 +765,9 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 	int hwirq = hdata->irq,;
 #endif
 	int ret = -ENODEV;
-#if 0
+
 	if (hdata->flags & HPET_DEV_FSB_CAP)
 		ret = setup_irq_msi_mode(hdata);
-#endif
 #if 0
 	else
 		ret = setup_irq_legacy_mode(hdata);
@@ -827,7 +849,8 @@ static void hardlockup_detector_hpet_enable(void)
 	/* Compute next tsc target */
 	if (cpu == hld_data->handling_cpu) {
 		ricardo_printk("will kick timer\n");
-		setup_irq_msi_mode(hld_data);
+		//setup_irq_msi_mode(hld_data);
+		update_handling_cpu(hld_data);
 		kick_timer(hld_data);
 		enable(hld_data);
 		ricardo_printk("kicked timer now:%llu future:%llu\n", tsc_curr, tsc_next);
