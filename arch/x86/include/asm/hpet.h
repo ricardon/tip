@@ -123,6 +123,8 @@ struct hpet_hld_data {
 	u32		num;
 	u32		flags;
 	u64		ticks_per_second;
+	u64		tsc_next;
+	u64		tsc_next_error;
 	u32		handling_cpu;
 	struct cpumask	cpu_monitored_mask;
 	struct msi_msg	msi_msg;
