@@ -21,9 +21,228 @@
 #include <linux/hpet.h>
 #include <asm/msidef.h>
 #include <asm/hpet.h>
+/*==============*/
+#include <linux/slab.h>
+#include <linux/debugfs.h>
+/*==================*/
 
 static struct hpet_hld_data *hld_data;
 static bool hardlockup_use_hpet;
+
+
+/*==========================================================================*/
+#define NIBBLE4(x, s) (((0xffffL << (s*16)) & x) >> s*16)
+#define PR_REG(s, r) #s ": 0x%04lx:%04lx:%04lx:%04lx\n", NIBBLE4((r), 3), NIBBLE4((r), 2), NIBBLE4((r), 1), NIBBLE4((r), 0)
+
+static void dump_regs(struct hpet_hld_data *hdata, int i)
+{
+	ricardo_printk("Registers %x\n", i);
+	ricardo_printk("HPET_ID: 0x%lx\n", hpet_readq(HPET_ID));
+	ricardo_printk("HPET_CFG: 0x%lx\n", hpet_readq(HPET_CFG));
+	//ricardo_printk("HPET_Tn_CFG(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CFG(hdata->num)));
+	//ricardo_printk("HPET_Tn_CMP(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_CMP(hdata->num)));
+	//ricardo_printk("HPET_Tn_ROUTE(hdev->num): 0x%lx\n", hpet_readq(HPET_Tn_ROUTE(hdata->num)));
+}
+
+struct hpet_debugfs_data {
+	unsigned char name[10];
+	unsigned int num;
+};
+
+static int set_destid_show(struct seq_file *m, void *data)
+{
+	struct hpet_hld_data *hdata = m->private;
+	struct msi_msg msg;
+	unsigned int destid, new_destid;
+
+	if (!hdata)
+		return -ENODEV;
+
+	msg.address_lo = hpet_readl(HPET_Tn_ROUTE(hdata->num) + 4);
+
+	//seq_printf(m, PR_REG(DATAREG, msg.address_lo));
+
+	//seq_printf(m, "msg.address_lo && MSI_ADDR_DEST_ID_MASK: %x\n",
+	//	   msg.address_lo & MSI_ADDR_DEST_ID_MASK);
+	//seq_printf(m, "msg.address_lo && MSI_ADDR_DEST_ID_MASK >> : %x\n",
+	//	   (msg.address_lo & MSI_ADDR_DEST_ID_MASK) >> MSI_ADDR_DEST_ID_SHIFT);
+	destid = (msg.address_lo & MSI_ADDR_DEST_ID_MASK) >> MSI_ADDR_DEST_ID_SHIFT;
+	new_destid = (destid + 1) % 8;
+	//seq_printf(m, "destid %d new_destid %d\n", destid, new_destid);
+
+	msg.address_lo &= ~0xff000;
+	msg.address_lo |= MSI_ADDR_DEST_ID(new_destid);
+
+	hpet_writel(msg.address_lo, HPET_Tn_ROUTE(hdata->num) + 4);
+	seq_printf(m, "DestID was %d, now is %d\n", destid, new_destid);
+
+	return 0;
+
+}
+
+DEFINE_SHOW_ATTRIBUTE(set_destid);
+
+static int hld_data_debugfs_show(struct seq_file *m, void *data)
+{
+	struct hpet_hld_data *hdata = m->private;
+
+	if (!hdata)
+		return -ENODEV;
+
+	seq_printf(m, "CPU mask: 0x%lx\n", *hdata->cpu_monitored_mask.bits);
+	//seq_printf(m, "Timer: %d\n", hdata->num);
+	//seq_printf(m, "IRQ: %d\n", hdata->irq);
+	//seq_printf(m, "Flags: %d\n", hdata->flags);
+	seq_printf(m, "TPS: %lld\n", hdata->ticks_per_second);
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(hld_data_debugfs);
+
+static void kick_timer(struct hpet_hld_data *hdata);
+
+static int kick_timer_show(struct seq_file *m, void *data)
+{
+	struct hpet_hld_data *hdata = m->private;
+
+	if (!hdata)
+		return -ENODEV;
+
+	kick_timer(hdata);
+	seq_printf(m, "timer kicked\n");
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(kick_timer);
+
+static bool nmi_enable = 1;
+static int enable_nmi_show(struct seq_file *m, void *data)
+{
+	if (nmi_enable)
+		nmi_enable = 0;
+	else
+		nmi_enable = 1;
+	seq_printf(m, "enabled NMIs\n");
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(enable_nmi);
+
+static int regset_dump_show(struct seq_file *m, void *data)
+{
+	unsigned long val;
+	struct hpet_debugfs_data *hpet_dbgfs_data = m->private;
+	unsigned int num;
+
+	if(!hpet_dbgfs_data)
+		return -ENODEV;
+
+	num = hpet_dbgfs_data->num;
+
+	val = hpet_readq(HPET_ID);
+	seq_printf(m, PR_REG(\nHPET_ID, val));
+	seq_printf(m, "REV_ID         : %02lx\n", val & 0xffL);
+	seq_printf(m, "NUM_TIM_CAP    : %02lx\n", (val >> 8) & 0x1fL);
+	seq_printf(m, "COUNT_SIZE_CAP : %lx\n", (val >> 13) & 0x1L);
+	seq_printf(m, "RES:           : %lx\n", (val >> 14) & 0x1L);
+	seq_printf(m, "LEG_ROUTE_CAP  : %lx\n", (val >> 15) & 0x1L);
+	seq_printf(m, "VENDOR_ID      : %04lx\n", (val >> 16) & 0xffffL);
+	seq_printf(m, "COUNTER_CLK_PER: %08lx\n", (val >> 32) & 0xffffffffL);
+
+	val = hpet_readq(HPET_CFG);
+	seq_printf(m, PR_REG(\nHPET_CFG, val));
+	seq_printf(m, "ENABLE_CFG     : %lx\n", val & 0x1L);
+	seq_printf(m, "LEG_RT_CFG     : %lx\n", (val >> 1) & 0x1L);
+	seq_printf(m, "RES1           : %02lx\n", (val >> 2) & 0x3fL);
+	seq_printf(m, "RES2           : %02lx\n", (val >> 8) & 0xffL);
+	seq_printf(m, "RES3           : %012lx\n", (val >> 16) & 0xffffffffffffL);
+
+	seq_printf(m, "\n");
+	val = hpet_readq(HPET_STATUS);
+	seq_printf(m, PR_REG(\nHPET_STATUS, val));
+	val = hpet_readq(HPET_COUNTER);
+	seq_printf(m, PR_REG(\nHPET_COUNTER, val));
+
+	val = hpet_readq(HPET_Tn_CFG(num));
+	seq_printf(m, PR_REG(\nHPET_Tn_CFG, val));
+	seq_printf(m, "RES                : %lx\n", val & 0x1L);
+	seq_printf(m, "TN_INT_TYPE_CNF    : %lx\n", (val >> 1) & 0x1L);
+	seq_printf(m, "TN_INT_ENB_CNF     : %lx\n", (val >> 2) & 0x1L);
+	seq_printf(m, "TN_TYPE_CNF        : %lx\n", (val >> 3) & 0x1L);
+	seq_printf(m, "TN_PER_INT_CAP     : %lx\n", (val >> 4) & 0x1L);
+	seq_printf(m, "TN_SIZE_CAP        : %lx\n", (val >> 5) & 0x1L);
+	seq_printf(m, "TN_VAL_SET_CNF     : %lx\n", (val >> 6) & 0x1L);
+	seq_printf(m, "RES                : %lx\n", (val >> 7) & 0x1L);
+	seq_printf(m, "TN_32MODE_CNF      : %lx\n", (val >> 8) & 0x1L);
+	seq_printf(m, "TN_INT_ROUTE_CNF   : %02lx\n", (val >> 9) & 0x1fL);
+	seq_printf(m, "TN_FSB_EN_CNF      : %lx\n", (val >> 14) & 0x1L);
+	seq_printf(m, "TN_FSB_INT_DEL_CAP : %lx\n", (val >> 15) & 0x1L);
+	seq_printf(m, "RES                : %04lx\n", (val >> 16) & 0xffffL);
+	seq_printf(m, "TN_INT_ROUTE_CAP   : %08lx\n", (val >> 32) & 0xffffffffL);
+
+	val = hpet_readq(HPET_Tn_CMP(num));
+	seq_printf(m, PR_REG(\nHPET_Tn_CMP, val));
+
+	val = hpet_readq(HPET_Tn_ROUTE(num));
+	seq_printf(m, PR_REG(\nHPET_Tn_ROUTE, val));
+	seq_printf(m, "MSI_ADDR_0FEE     : %03lx\n", (val >> (20 + 32)) & 0xfff);
+	seq_printf(m, "MSI_ADDR_DestID   : %02lx\n", (val >> (12 + 32)) & 0xff);
+	seq_printf(m, "MSI_ADDR_RES      : %02lx\n", (val >> (4 + 32)) & 0xff);
+	seq_printf(m, "MSI_ADDR_RH       : %lx\n", (val >> (3 + 32)) & 0x1);
+	seq_printf(m, "MSI_ADDR_DM       : %lx\n", (val >> (2 + 32)) & 0x1);
+	seq_printf(m, "MSI_ADDR_RES      : %lx\n", (val >> (0 + 32)) & 0x3);
+	seq_printf(m, "MSI_DATA_RES      : %04lx\n", (val >> 16) & 0xffff);
+	seq_printf(m, "MSI_DATA_TM       : %lx\n", (val >> 15) & 0x1);
+	seq_printf(m, "MSI_DATA_LVL      : %lx\n", (val >> 14) & 0x1);
+	seq_printf(m, "MSI_DATA_RES      : %lx\n", (val >> 11) & 0x3);
+	seq_printf(m, "MSI_DATA_DelMode  : %lx\n", (val >> 8) & 0x7);
+	seq_printf(m, "MSI_DATA_VEC      : %02lx\n", val & 0xff);
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(regset_dump);
+
+void __init debugfs_init(struct hpet_hld_data *hdata)
+{
+	struct dentry *hpet_debug_root;
+	unsigned long val;
+	unsigned int i, timers;
+
+	hpet_debug_root = debugfs_create_dir("hpet_wdt", NULL);
+	if (!hpet_debug_root)
+		return;
+
+	debugfs_create_file("params", 0444, hpet_debug_root, hld_data,
+			    &hld_data_debugfs_fops);
+
+	debugfs_create_file("kick_timer", 0444, hpet_debug_root, hld_data,
+			    &kick_timer_fops);
+
+	debugfs_create_file("enable_nmi", 0444, hpet_debug_root, NULL,
+			    &enable_nmi_fops);
+
+	debugfs_create_file("set_destid", 0444, hpet_debug_root, hld_data,
+			    &set_destid_fops);
+
+	val = hpet_readq(HPET_ID);
+	timers = 1 + ((val & HPET_ID_NUMBER) >> HPET_ID_NUMBER_SHIFT);
+
+	for (i = 0; i < timers; i++){
+		/*TODO: free memory on error */
+		struct hpet_debugfs_data *priv = kzalloc(sizeof(*priv),
+							 GFP_KERNEL);
+
+		priv->num = i;
+		sprintf(priv->name, "regset%d", priv->num);
+
+		debugfs_create_file(priv->name, 0444, hpet_debug_root,
+				    priv, &regset_dump_fops);
+	}
+}
+
+/*==========================================================================*/
+
 
 /**
  * get_count() - Get the current count of the HPET timer
@@ -156,10 +375,13 @@ static void set_periodic(struct hpet_hld_data *hdata)
  */
 static bool is_hpet_wdt_interrupt(struct hpet_hld_data *hdata)
 {
+	ricardo_printk("%d here\n", smp_processor_id());
 	if (smp_processor_id() == hdata->handling_cpu) {
 		unsigned long tsc_curr;
 
 		tsc_curr = rdtsc();
+		ricardo_printk("%d here curr%ld next %ld error %ld\n",
+			       smp_processor_id(), tsc_curr, hdata->tsc_next, hdata->tsc_next_error);
 		if (abs(tsc_curr - hdata->tsc_next) < hdata->tsc_next_error)
 			return true;
 	}
@@ -242,7 +464,9 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	struct hpet_hld_data *hdata = hld_data;
 	unsigned int cpu = smp_processor_id();
 
+	ricardo_printk("%d here\n", smp_processor_id());
 	if (is_hpet_wdt_interrupt(hdata)) {
+		ricardo_printk("%d here\n", smp_processor_id());
 		/* Get ready to check other CPUs for hardlockups. */
 		cpumask_copy(&hdata->cpu_monitored_mask,
 			     watchdog_get_allowed_cpumask());
@@ -259,7 +483,10 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 		return NMI_HANDLED;
 	}
 
+	ricardo_printk("%d here\n", smp_processor_id());
+
 	if (cpumask_test_and_clear_cpu(cpu, &hdata->cpu_monitored_mask)) {
+		ricardo_printk("%d here\n", smp_processor_id());
 		inspect_for_hardlockups(regs);
 		return NMI_HANDLED;
 	}
@@ -320,7 +547,7 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 		return ret;
 
 	ret = register_nmi_handler(NMI_LOCAL, hardlockup_detector_nmi_handler,
-				   0, "hpet_hld");
+				   NMI_FLAG_FIRST, "hpet_hld");
 
 	return ret;
 }
@@ -415,9 +642,11 @@ int __init hardlockup_detector_hpet_init(void)
 {
 	int ret;
 
+	ricardo_printk("here\n");
 	if (!hardlockup_use_hpet)
 		return -ENODEV;
 
+	ricardo_printk("here\n");
 	if (!is_hpet_enabled())
 		return -ENODEV;
 
@@ -428,13 +657,18 @@ int __init hardlockup_detector_hpet_init(void)
 	if (!hld_data)
 		return -ENODEV;
 
+	ricardo_printk("here\n");
 	disable_timer(hld_data);
 
 	set_periodic(hld_data);
+	ricardo_printk("here\n");
 
 	ret = setup_hpet_irq(hld_data);
 	if (ret)
 		return -ENODEV;
+	ricardo_printk("here\n");
+
+	debugfs_init(hld_data);
 
 	return 0;
 }
