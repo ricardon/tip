@@ -184,7 +184,7 @@ struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 
 	if (!(cfg & HPET_TN_FSB_CAP))
 		return NULL;
-
+	
 	hdata = kzalloc(sizeof(*hdata), GFP_KERNEL);
 	if (!hdata)
 		return NULL;
