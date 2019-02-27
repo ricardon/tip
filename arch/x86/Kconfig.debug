@@ -169,6 +169,17 @@ config IOMMU_LEAK
 config HAVE_MMIOTRACE_SUPPORT
 	def_bool y
 
+config X86_HARDLOCKUP_DETECTOR_HPET
+	bool "Use HPET Timer for Hard Lockup Detection"
+	select SOFTLOCKUP_DETECTOR
+	select HARDLOCKUP_DETECTOR
+	select HARDLOCKUP_DETECTOR_CORE
+	depends on HPET_TIMER && HPET && X86_64
+	help
+	  Say y to enable a hardlockup detector that is driven by a High-
+	  Precision Event Timer. This option is helpful to not use counters
+	  from the Performance Monitoring Unit to drive the detector.
+
 config X86_DECODER_SELFTEST
 	bool "x86 instruction decoder selftest"
 	depends on DEBUG_KERNEL && KPROBES
