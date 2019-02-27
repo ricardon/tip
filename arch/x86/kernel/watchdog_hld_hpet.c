@@ -55,6 +55,11 @@ static inline void set_comparator(struct hpet_hld_data *hdata,
  *
  * Reprogram the timer to expire within watchdog_thresh seconds in the future.
  *
+ * Also compute the expected value of the time-stamp counter at the time of
+ * expiration as well as a deviation from the expected value. The maximum
+ * deviation is of ~1.5%. This deviation can be easily computed by shifting
+ * by 6 positions the delta between the current and expected time-stamp values.
+ *
  * Returns:
  *
  * None
@@ -62,7 +67,18 @@ static inline void set_comparator(struct hpet_hld_data *hdata,
 static void kick_timer(struct hpet_hld_data *hdata, bool force)
 {
 	bool kick_needed = force || !(hdata->flags & HPET_DEV_PERI_CAP);
-	unsigned long new_compare, count;
+	unsigned long tsc_curr, tsc_delta, new_compare, count;
+
+	/* Start obtaining the current TSC and HPET counts. */
+	tsc_curr = rdtsc();
+
+	if (kick_needed)
+		count = get_count();
+
+	tsc_delta = (unsigned long)watchdog_thresh * (unsigned long)tsc_khz
+		    * 1000L;
+	hdata->tsc_next = tsc_curr + tsc_delta;
+	hdata->tsc_next_error = tsc_delta >> 6;
 
 	/*
 	 * Update the comparator in increments of watch_thresh seconds relative
@@ -74,8 +90,6 @@ static void kick_timer(struct hpet_hld_data *hdata, bool force)
 	 */
 
 	if (kick_needed) {
-		count = get_count();
-
 		new_compare = count + watchdog_thresh * hdata->ticks_per_second;
 
 		set_comparator(hdata, new_compare);
@@ -147,6 +161,14 @@ static void set_periodic(struct hpet_hld_data *hdata)
  */
 static bool is_hpet_wdt_interrupt(struct hpet_hld_data *hdata)
 {
+	if (smp_processor_id() == hdata->handling_cpu) {
+		unsigned long tsc_curr;
+
+		tsc_curr = rdtsc();
+		if (abs(tsc_curr - hdata->tsc_next) < hdata->tsc_next_error)
+			return true;
+	}
+
 	return false;
 }
 
