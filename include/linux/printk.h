@@ -526,4 +526,6 @@ static inline void print_hex_dump_debug(const char *prefix_str, int prefix_type,
 }
 #endif
 
+#define ricardo_printk(fmt, ...) printk(KERN_ERR "RICARDO: F:%s f:%s l:%d " fmt, __FILE__, __func__, __LINE__, ##__VA_ARGS__)
+
 #endif
