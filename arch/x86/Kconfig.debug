@@ -117,9 +117,13 @@ config IOMMU_LEAK
 config HAVE_MMIOTRACE_SUPPORT
 	def_bool y
 
+config X86_HARDLOCKUP_DETECTOR
+	bool
+
 config X86_HARDLOCKUP_DETECTOR_HPET
 	bool "HPET Timer for Hard Lockup Detection"
 	select HARDLOCKUP_DETECTOR_CORE
+	select X86_HARDLOCKUP_DETECTOR
 	depends on HARDLOCKUP_DETECTOR && HPET_TIMER && HPET && (X86_64 || X86_32)
 	help
 	  The hardlockup detector is driven by one counter of the Performance
