@@ -203,6 +203,7 @@ struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 
 	hdata->num = HPET_WD_TIMER_NR;
 	hdata->ticks_per_second = hpet_get_ticks_per_sec(hpet_readq(HPET_ID));
+	hdata->blockid = hpet_blockid;
 
 	return hdata;
 }
