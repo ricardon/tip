@@ -23,7 +23,6 @@
 
 static struct hpet_hld_data *hld_data;
 static bool hardlockup_use_hpet;
-static cpumask_var_t hardlockup_IPI_cpumask;
 
 static inline unsigned long get_count(void)
 {
@@ -189,30 +188,20 @@ static int hardlockup_detector_nmi_handler(unsigned int val,
 	struct hpet_hld_data *hdata = hld_data;
 	unsigned int cpu = smp_processor_id();
 
-	if (is_hpet_wdt_interrupt(hdata)) {
-		/* Get ready to check other CPUs for hardlockups. */
-		cpumask_copy(hardlockup_IPI_cpumask,
-			     to_cpumask(hdata->cpu_monitored_mask));
-		cpumask_clear_cpu(smp_processor_id(), hardlockup_IPI_cpumask);
-		cpumask_and(hardlockup_IPI_cpumask, hardlockup_IPI_cpumask,
-			    cpu_online_mask);
+	if (!is_hpet_wdt_interrupt(hdata))
+		return NMI_DONE;
 
-		apic->send_IPI_mask_allbutself(hardlockup_IPI_cpumask,
-					       NMI_VECTOR);
+	inspect_for_hardlockups(regs);
 
-		kick_timer(hdata, !(hdata->has_periodic));
+	cpu = cpumask_next(cpu, to_cpumask(hdata->cpu_monitored_mask));
+	if (cpu >= nr_cpu_ids)
+		cpu = cpumask_first(to_cpumask(hdata->cpu_monitored_mask));
 
-		inspect_for_hardlockups(regs);
+	hdata->handling_cpu = cpu;
+	update_msi_msg(hdata);
+	kick_timer(hdata, !(hdata->has_periodic));
 
-		return NMI_HANDLED;
-	}
-
-	if (cpumask_test_and_clear_cpu(cpu, hardlockup_IPI_cpumask)) {
-		inspect_for_hardlockups(regs);
-		return NMI_HANDLED;
-	}
-
-	return NMI_DONE;
+	return NMI_HANDLED;
 }
 
 /**
@@ -353,24 +342,19 @@ int __init hardlockup_detector_hpet_init(void)
 	if (check_tsc_unstable())
 		return -ENODEV;
 
-	if(!zalloc_cpumask_var(&hardlockup_IPI_cpumask, GFP_KERNEL))
-		return -ENOMEM;
-
 	hld_data = hpet_hardlockup_detector_assign_timer();
 	if (!hld_data)
-		goto err;
+		return -ENODEV;
 
 	disable_timer(hld_data);
 
 	set_periodic(hld_data);
 
 	ret = setup_hpet_irq(hld_data);
-	if (ret)
-		goto err;
+	if (ret) {
+		kfree(hld_data);
+		hld_data = NULL;
+	}
 
-	return 0;
-
-err:
-	free_cpumask_var(hardlockup_IPI_cpumask);
 	return ret;
 }
