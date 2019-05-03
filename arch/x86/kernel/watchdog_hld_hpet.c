@@ -304,11 +304,13 @@ static inline unsigned long get_count(void)
 	return hpet_readq(HPET_COUNTER);
 }
 
+#if 0
 static inline void set_comparator(struct hpet_hld_data *hdata,
 				  unsigned long cmp)
 {
 	hpet_writeq(cmp, HPET_Tn_CMP(hdata->num));
 }
+#endif
 
 /**
  * kick_timer() - Reprogram timer to expire in the future
@@ -324,7 +326,7 @@ static inline void set_comparator(struct hpet_hld_data *hdata,
 static void kick_timer(struct hpet_hld_data *hdata, bool force)
 {
 	bool kick_needed = force || !(hdata->has_periodic);
-	unsigned long tsc_curr, tsc_delta, new_compare, count;
+	unsigned long tsc_curr, tsc_delta, new_compare, count, period = 0;
 
 	tsc_curr = rdtsc();
 
@@ -351,10 +353,13 @@ static void kick_timer(struct hpet_hld_data *hdata, bool force)
 	if (!kick_needed)
 		return;
 
+	if (hdata->has_periodic)
+		period = watchdog_thresh * hdata->ticks_per_cpu;
+
 	count = get_count();
 	new_compare = count + watchdog_thresh * hdata->ticks_per_cpu;
-	set_comparator(hdata, new_compare);
-	ricardo_printk("Timer kicked cnt:%lx cmp:%lx\n", count, new_compare);
+	hpet_set_comparator(hdata->num, new_compare, (unsigned int)period);
+	ricardo_printk("Timer kicked cnt:%lx cmp:%lx per:%lx\n", count, new_compare, period);
 }
 
 static void disable_timer(struct hpet_hld_data *hdata)
@@ -390,7 +395,7 @@ static void set_periodic(struct hpet_hld_data *hdata)
 		return;
 
 	v = hpet_readl(HPET_Tn_CFG(hdata->num));
-	v |= HPET_TN_PERIODIC;
+	v |= HPET_TN_PERIODIC | HPET_TN_32BIT;
 	hpet_writel(v, HPET_Tn_CFG(hdata->num));
 }
 
@@ -563,7 +568,7 @@ static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 	 */
 	v = hpet_readl(HPET_Tn_CFG(hdata->num));
 	v &= ~HPET_TN_LEVEL;
-	v |= HPET_TN_FSB;
+	v |= HPET_TN_FSB | HPET_TN_32BIT;
 
 	hpet_writel(v, HPET_Tn_CFG(hdata->num));
 
