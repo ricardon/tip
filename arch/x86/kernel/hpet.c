@@ -290,6 +290,47 @@ static void hpet_legacy_clockevent_register(void)
 	printk(KERN_DEBUG "hpet clockevent registered\n");
 }
 
+/**
+ * hpet_set_comparator() - Helper function for setting comparator register
+ * @num:	The timer ID
+ * @cmp:	The value to be written to the comparator/accumulator
+ * @period:	The value to be written to the period (0 = oneshot mode)
+ *
+ * Helper function for updating comparator, accumulator and period values.
+ *
+ * In periodic mode, HPET needs HPET_TN_SETVAL to be set before writing
+ * to the Tn_CMP to update the accumulator. Then, HPET needs a second
+ * write (with HPET_TN_SETVAL cleared) to Tn_CMP to set the period.
+ * The HPET_TN_SETVAL bit is automatically cleared after the first write.
+ *
+ * For one-shot mode, HPET_TN_SETVAL does not need to be set.
+ *
+ * See the following documents:
+ *   - Intel IA-PC HPET (High Precision Event Timers) Specification
+ *   - AMD-8111 HyperTransport I/O Hub Data Sheet, Publication # 24674
+ */
+void hpet_set_comparator(int num, unsigned int cmp, unsigned int period)
+{
+	if (period) {
+		unsigned int v = hpet_readl(HPET_Tn_CFG(num));
+
+		hpet_writel(v | HPET_TN_SETVAL, HPET_Tn_CFG(num));
+	}
+
+	hpet_writel(cmp, HPET_Tn_CMP(num));
+
+	if (!period)
+		return;
+
+	/*
+	 * This delay is seldom used: never in one-shot mode and in periodic
+	 * only when reprogramming the timer.
+	 */
+	udelay(1);
+	hpet_writel(period, HPET_Tn_CMP(num));
+}
+EXPORT_SYMBOL_GPL(hpet_set_comparator);
+
 static int hpet_set_periodic(struct clock_event_device *evt, int timer)
 {
 	unsigned int cfg, cmp, now;
@@ -301,19 +342,11 @@ static int hpet_set_periodic(struct clock_event_device *evt, int timer)
 	now = hpet_readl(HPET_COUNTER);
 	cmp = now + (unsigned int)delta;
 	cfg = hpet_readl(HPET_Tn_CFG(timer));
-	cfg |= HPET_TN_ENABLE | HPET_TN_PERIODIC | HPET_TN_SETVAL |
-	       HPET_TN_32BIT;
+	cfg |= HPET_TN_ENABLE | HPET_TN_PERIODIC | HPET_TN_32BIT;
 	hpet_writel(cfg, HPET_Tn_CFG(timer));
-	hpet_writel(cmp, HPET_Tn_CMP(timer));
-	udelay(1);
-	/*
-	 * HPET on AMD 81xx needs a second write (with HPET_TN_SETVAL
-	 * cleared) to T0_CMP to set the period. The HPET_TN_SETVAL
-	 * bit is automatically cleared after the first write.
-	 * (See AMD-8111 HyperTransport I/O Hub Data Sheet,
-	 * Publication # 24674)
-	 */
-	hpet_writel((unsigned int)delta, HPET_Tn_CMP(timer));
+
+	hpet_set_comparator(timer, cmp, (unsigned int)delta);
+
 	hpet_start_counter();
 	hpet_print_config();
 
