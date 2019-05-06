@@ -43,6 +43,13 @@ static void kick_timer(struct hpet_hld_data *hdata, bool force)
 	 * are able to update the comparator before the counter reaches such new
 	 * value.
 	 *
+	 * Each CPU must be monitored every watch_thresh seconds. Since the timer
+	 * targets one CPU at a time, it must expire every
+	 *
+	 *        ticks_per_cpu = watch_thresh * ticks_per_second /enabled_cpus
+	 *
+	 * as computed in update_ticks_per_cpu().
+	 *
 	 * Let it wrap around if needed.
 	 */
 
@@ -54,7 +61,7 @@ static void kick_timer(struct hpet_hld_data *hdata, bool force)
 
 	count = hpet_readl(HPET_COUNTER);
 	new_compare = count + watchdog_thresh * hdata->ticks_per_second;
-	hpet_set_comparator(hdata->num, (u32)new_compare, (u32)period);
+	hpet_set_comparator(hdata->num, new_compare, (unsigned int)period);
 }
 
 static void disable_timer(struct hpet_hld_data *hdata)
@@ -234,6 +241,27 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 }
 
 /**
+ * update_ticks_per_cpu() - Update the number of HPET ticks per CPU
+ * @hdata:     struct with the timer's the ticks-per-second and CPU mask
+ *
+ * From the overall ticks-per-second of the timer, compute the number of ticks
+ * after which the timer should expire to monitor each CPU every watch_thresh
+ * seconds. The ticks-per-cpu quantity is computed using the number of CPUs that
+ * the watchdog currently monitors.
+ */
+static void update_ticks_per_cpu(struct hpet_hld_data *hdata)
+{
+	u64 temp = hdata->ticks_per_second;
+
+	/* Only update if there are monitored CPUs. */
+	if (!hdata->enabled_cpus)
+		return;
+
+	do_div(temp, hdata->enabled_cpus);
+	hdata->ticks_per_cpu = temp;
+}
+
+/**
  * hardlockup_detector_hpet_enable() - Enable the hardlockup detector
  * @cpu:	CPU Index in which the watchdog will be enabled.
  *
@@ -246,7 +274,10 @@ void hardlockup_detector_hpet_enable(unsigned int cpu)
 {
 	cpumask_set_cpu(cpu, to_cpumask(hld_data->cpu_monitored_mask));
 
-	if (!hld_data->enabled_cpus++) {
+	hld_data->enabled_cpus++;
+	update_ticks_per_cpu(hld_data);
+
+	if (hld_data->enabled_cpus == 1) {
 		hld_data->handling_cpu = cpu;
 		update_msi_msg(hld_data);
 		/* Force timer kick when detector is just enabled */
@@ -274,6 +305,8 @@ void hardlockup_detector_hpet_disable(unsigned int cpu)
 {
 	cpumask_clear_cpu(cpu, to_cpumask(hld_data->cpu_monitored_mask));
 	hld_data->enabled_cpus--;
+
+	update_ticks_per_cpu(hld_data);
 
 	if (hld_data->handling_cpu != cpu)
 		return;
