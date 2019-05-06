@@ -23,6 +23,7 @@
 
 static struct hpet_hld_data *hld_data;
 static bool hardlockup_use_hpet;
+static u64 tsc_next_error;
 
 /**
  * kick_timer() - Reprogram timer to expire in the future
@@ -30,12 +31,21 @@ static bool hardlockup_use_hpet;
  * @force:	Force reprogram. Useful enabling or re-enabling detector.
  *
  * Reprogram the timer to expire within watchdog_thresh seconds in the future.
- *
+ * Also compute the expected value of the time-stamp counter at the time of
+ * expiration as well as a deviation from the expected value. The maximum
+ * deviation is of ~1.5%. This deviation can be easily computed by shifting
+ * by 6 positions the delta between the current and expected time-stamp values.
  */
 static void kick_timer(struct hpet_hld_data *hdata, bool force)
 {
 	bool kick_needed = force || !(hdata->has_periodic);
-	u64 new_compare, count, period = 0;
+	u64 tsc_curr, tsc_delta, new_compare, count, period = 0;
+
+	tsc_curr = rdtsc();
+
+	tsc_delta = (unsigned long)watchdog_thresh * hdata->tsc_ticks_per_cpu;
+	hdata->tsc_next = tsc_curr + tsc_delta;
+	tsc_next_error = tsc_delta >> 6;
 
 	/*
 	 * Update the comparator in increments of watch_thresh seconds relative
@@ -91,6 +101,15 @@ static void enable_timer(struct hpet_hld_data *hdata)
  */
 static bool is_hpet_wdt_interrupt(struct hpet_hld_data *hdata)
 {
+	if (smp_processor_id() == hdata->handling_cpu) {
+		u64 tsc_curr;
+
+		tsc_curr = rdtsc();
+
+		return (tsc_curr - hdata->tsc_next) + tsc_next_error <
+		       2*tsc_next_error;
+	}
+
 	return false;
 }
 
@@ -259,6 +278,10 @@ static void update_ticks_per_cpu(struct hpet_hld_data *hdata)
 
 	do_div(temp, hdata->enabled_cpus);
 	hdata->ticks_per_cpu = temp;
+
+	temp = (unsigned long)tsc_khz * 1000L;
+	do_div(temp, hdata->enabled_cpus);
+	hdata->tsc_ticks_per_cpu = temp;
 }
 
 /**
