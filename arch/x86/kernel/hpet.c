@@ -122,7 +122,7 @@ static inline int is_hpet_capable(void)
 /*
  * HPET timer interrupt enable / disable
  */
-static bool hpet_legacy_int_enabled;
+static bool hpet_legacy_int_enabled = true;
 
 /**
  * is_hpet_enabled - check whether the hpet timer interrupt is enabled
@@ -186,7 +186,7 @@ struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 	if (!hdata)
 		return NULL;
 
-	if (cfg & HPET_TN_PERIODIC_CAP)
+	if ((cfg & HPET_TN_PERIODIC_CAP) && 1)
 		hdata->has_periodic = true;
 
 	hdata->num = HPET_WD_TIMER_NR;
@@ -1063,7 +1063,7 @@ int __init hpet_enable(void)
 	if (hpet_clocksource_register())
 		goto out_nohpet;
 
-	if (id & HPET_ID_LEGSUP) {
+	if (id & HPET_ID_LEGSUP && 0) {
 		hpet_legacy_clockevent_register();
 		return 1;
 	}
