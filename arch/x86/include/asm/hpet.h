@@ -62,7 +62,7 @@
 #define HPET_MIN_PERIOD		100000UL
 
 /* Timer used for the hardlockup detector */
-#define HPET_WD_TIMER_NR 2
+#define HPET_WD_TIMER_NR 0
 
 /* hpet memory map physical address */
 extern unsigned long hpet_address;
