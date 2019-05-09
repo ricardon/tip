@@ -566,6 +566,21 @@ int lockup_detector_offline_cpu(unsigned int cpu)
 	return 0;
 }
 
+static int hardlockup_start_fn(void *data)
+{
+	watchdog_nmi_enable(smp_processor_id());
+	return 0;
+}
+
+void hardlockup_start_all(void)
+{
+	int cpu;
+
+	cpumask_copy(&watchdog_allowed_mask, &watchdog_cpumask);
+	for_each_cpu(cpu, &watchdog_allowed_mask)
+		smp_call_on_cpu(cpu, hardlockup_start_fn, NULL, false);
+}
+
 static void lockup_detector_reconfigure(void)
 {
 	cpus_read_lock();
