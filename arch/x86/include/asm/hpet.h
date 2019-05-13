@@ -119,6 +119,8 @@ struct hpet_hld_data {
 	u64		tsc_ticks_per_cpu;
 	u32		handling_cpu;
 	u32		enabled_cpus;
+	u8		blockid;
+	void		*intremap_data;
 	struct msi_msg	msi_msg;
 	unsigned long	cpu_monitored_mask[0];
 };
@@ -129,6 +131,15 @@ extern void hardlockup_detector_hpet_stop(void);
 extern void hardlockup_detector_hpet_enable(unsigned int cpu);
 extern void hardlockup_detector_hpet_disable(unsigned int cpu);
 extern void hardlockup_detector_switch_to_perf(void);
+#ifdef CONFIG_IRQ_REMAP
+extern int hld_hpet_intremap_activate_irq(struct hpet_hld_data *hdata);
+extern int hld_hpet_intremap_alloc_irq(struct hpet_hld_data *hdata);
+#else
+static inline int hld_hpet_intremap_activate_irq(struct hpet_hld_data *hdata)
+{ return -ENODEV; }
+static inline int hld_hpet_intremap_alloc_irq(struct hpet_hld_data *hdata)
+{ return -ENODEV; }
+#endif /* CONFIG_IRQ_REMAP */
 #else
 static inline struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 { return NULL; }
