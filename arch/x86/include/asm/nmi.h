@@ -63,4 +63,10 @@ void stop_nmi(void);
 void restart_nmi(void);
 void local_touch_nmi(void);
 
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR
+void hardlockup_detector_switch_to_perf(void);
+#else
+static inline void hardlockup_detector_switch_to_perf(void) { }
+#endif
+
 #endif /* _ASM_X86_NMI_H */
