@@ -15,6 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+#define DEBUG
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/errno.h>
@@ -178,6 +179,12 @@ char *parse_args(const char *doing,
 
 	if (*args)
 		pr_debug("doing %s, parsing ARGS: '%s'\n", doing, args);
+	else
+		pr_debug("doing %s, parsing ARGS: NONE\n", doing);
+	pr_debug("====================================================\n");
+	dump_stack();
+	pr_debug("====================================================\n");
+
 
 	while (*args) {
 		int ret;

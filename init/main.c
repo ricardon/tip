@@ -180,9 +180,12 @@ static bool __init obsolete_checksetup(char *line)
 	const struct obs_kernel_param *p;
 	bool had_early_param = false;
 
+	printk(KERN_ERR "===== %s %s\n", __func__, line);
 	p = __setup_start;
 	do {
 		int n = strlen(p->str);
+
+		printk(KERN_ERR "==== attempting %s\n", p->str);
 		if (parameqn(line, p->str, n)) {
 			if (p->early) {
 				/* Already done in parse_early_param?
@@ -191,16 +194,22 @@ static bool __init obsolete_checksetup(char *line)
 				 * params and __setups of same names 8( */
 				if (line[n] == '\0' || line[n] == '=')
 					had_early_param = true;
+				printk(KERN_ERR "=== 1\n");
 			} else if (!p->setup_func) {
 				pr_warn("Parameter %s is obsolete, ignored\n",
 					p->str);
+				printk(KERN_ERR "=== 2\n");
 				return true;
-			} else if (p->setup_func(line + n))
+			} else if (p->setup_func(line + n)) {
+				printk(KERN_ERR "=== 3\n");
 				return true;
+			} else
+				printk(KERN_ERR "=== 4\n");
 		}
 		p++;
 	} while (p < __setup_end);
 
+	printk(KERN_ERR "=== ret %d\n", had_early_param);
 	return had_early_param;
 }
 

@@ -68,6 +68,11 @@ inline void hpet_writel(unsigned int d, unsigned int a)
 }
 
 #ifdef CONFIG_X86_64
+inline unsigned long hpet_readq(unsigned int a)
+{
+       return readq(hpet_virt_address + a);
+}
+
 #include <asm/pgtable.h>
 #endif
 
