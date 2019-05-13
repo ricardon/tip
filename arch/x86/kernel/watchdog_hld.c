@@ -6,6 +6,8 @@
  * Copyright (C) Intel Corporation 2023
  */
 
+#define pr_fmt(fmt) "watchdog: " fmt
+
 #include <linux/nmi.h>
 #include <asm/hpet.h>
 
@@ -83,4 +85,13 @@ void watchdog_nmi_start(void)
 	/* Only the HPET lockup detector defines a start function. */
 	if (detector_type == X86_HARDLOCKUP_DETECTOR_HPET)
 		hardlockup_detector_hpet_start();
+}
+
+void hardlockup_detector_mark_hpet_hld_unavailable(void)
+{
+	if (detector_type != X86_HARDLOCKUP_DETECTOR_HPET)
+		return;
+
+	pr_warn("TSC is unstable. Stopping the HPET NMI watchdog.");
+	hardlockup_detector_mark_unavailable();
 }

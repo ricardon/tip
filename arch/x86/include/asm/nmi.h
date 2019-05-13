@@ -63,4 +63,10 @@ void stop_nmi(void);
 void restart_nmi(void);
 void local_touch_nmi(void);
 
+#ifdef CONFIG_HARDLOCKUP_DETECTOR
+extern void hardlockup_detector_mark_hpet_hld_unavailable(void);
+#else
+static inline void hardlockup_detector_mark_hpet_hld_unavailable(void) {}
+#endif
+
 #endif /* _ASM_X86_NMI_H */

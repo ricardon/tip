@@ -1191,6 +1191,9 @@ void mark_tsc_unstable(char *reason)
 
 	clocksource_mark_unstable(&clocksource_tsc_early);
 	clocksource_mark_unstable(&clocksource_tsc);
+
+	/* The HPET hardlockup detector depends on a stable TSC. */
+	hardlockup_detector_mark_hpet_hld_unavailable();
 }
 
 EXPORT_SYMBOL_GPL(mark_tsc_unstable);
