@@ -202,6 +202,7 @@ struct hpet_hld_data *hpet_hardlockup_detector_assign_timer(void)
 	 */
 	temp = (u64)cfg << HPET_COUNTER_CLK_PERIOD_SHIFT;
 	hdata->ticks_per_second = hpet_get_ticks_per_sec(temp);
+	hdata->blockid = hpet_blockid;
 
 	return hdata;
 }
