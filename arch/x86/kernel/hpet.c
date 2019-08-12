@@ -18,6 +18,7 @@ enum hpet_mode {
 	HPET_MODE_LEGACY,
 	HPET_MODE_CLOCKEVT,
 	HPET_MODE_DEVICE,
+	HPET_MODE_NMI_WATCHDOG,
 };
 
 struct hpet_channel {
@@ -177,6 +178,62 @@ do {								\
 		_hpet_print_config(__func__, __LINE__);	\
 } while (0)
 
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+struct hpet_hld_data *hld_data;
+
+static void hpet_hardlockup_detector_reserve_timer(void)
+{
+	struct hpet_channel *hc = hpet_base.channels;
+	int i;
+
+	hld_data = kzalloc(sizeof(struct hpet_hld_data), GFP_KERNEL);
+
+	if (!hld_data)
+		return;
+
+	for (i = 0; i < hpet_base.nr_channels; i++) {
+		 hc = hpet_base.channels + i;
+
+		/*
+		 * Associate the first unused channel to the hardlockup
+		 * detector. We should be selecting the channel before
+		 * the /dev/hpet and the HPET clocksource.
+		 */
+		if (hc->mode == HPET_MODE_UNUSED) {
+			hc->mode = HPET_MODE_NMI_WATCHDOG;
+			break;
+		}
+	}
+
+	if (hc->mode != HPET_MODE_NMI_WATCHDOG)
+		goto no_hld_channel;
+
+	if (!(hc->boot_cfg & HPET_TN_FSB_CAP)) {
+		hc->mode = HPET_MODE_UNUSED;
+		goto no_hld_channel;
+	}
+
+	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP)
+		hld_data->has_periodic = true;
+
+	hld_data->channel = i;
+	hld_data->ticks_per_second = hpet_freq;
+
+	return;
+
+no_hld_channel:
+	kfree(hld_data);
+	hld_data = NULL;
+}
+
+struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void)
+{
+	return hld_data;
+}
+#else /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
+static void hpet_hardlockup_detector_reserve_timer(void) { }
+#endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
+
 /*
  * When the HPET driver (/dev/hpet) is enabled, we need to reserve
  * timer 0 and timer 1 in case of RTC emulation.
@@ -214,6 +271,7 @@ static void __init hpet_reserve_platform_timers(void)
 			break;
 		case HPET_MODE_CLOCKEVT:
 		case HPET_MODE_LEGACY:
+		case HPET_MODE_NMI_WATCHDOG:
 			hpet_reserve_timer(&hd, hc->num);
 			break;
 		}
@@ -835,8 +893,8 @@ static bool __init hpet_counting(void)
  */
 int __init hpet_enable(void)
 {
+	unsigned int i, channels, ret = 0;
 	u32 hpet_period, cfg, id, irq;
-	unsigned int i, channels;
 	struct hpet_channel *hc;
 	u64 freq;
 
@@ -931,9 +989,12 @@ int __init hpet_enable(void)
 		hpet_base.channels[0].mode = HPET_MODE_LEGACY;
 		if (IS_ENABLED(CONFIG_HPET_EMULATE_RTC))
 			hpet_base.channels[1].mode = HPET_MODE_LEGACY;
-		return 1;
+		ret = 1;
 	}
-	return 0;
+
+	hpet_hardlockup_detector_reserve_timer();
+
+	return ret;
 
 out_nohpet:
 	kfree(hpet_base.channels);
