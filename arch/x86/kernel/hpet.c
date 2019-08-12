@@ -20,6 +20,7 @@ enum hpet_mode {
 	HPET_MODE_LEGACY,
 	HPET_MODE_CLOCKEVT,
 	HPET_MODE_DEVICE,
+	HPET_MODE_NMI_WATCHDOG,
 };
 
 struct hpet_channel {
@@ -216,6 +217,7 @@ static void __init hpet_reserve_platform_timers(void)
 			break;
 		case HPET_MODE_CLOCKEVT:
 		case HPET_MODE_LEGACY:
+		case HPET_MODE_NMI_WATCHDOG:
 			hpet_reserve_timer(&hd, hc->num);
 			break;
 		}
@@ -1498,3 +1500,101 @@ irqreturn_t hpet_rtc_interrupt(int irq, void *dev_id)
 }
 EXPORT_SYMBOL_GPL(hpet_rtc_interrupt);
 #endif
+
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+
+/*
+ * We program the channel in 32-bit mode to reduce the number of register
+ * accesses. The maximum value of watch_thresh is 60 seconds. The HPET counter
+ * should not wrap around more frequently than that: its frequency must be less
+ * than 71.582788 MHz. For safety, limit the frequency to 85% of the maximum
+ * permitted frequency.
+ *
+ * The frequency of the HPET in most systems in the field is less than 24MHz.
+ */
+#define HPET_HLD_MAX_FREQ 60845000ULL
+
+/**
+ * hpet_hld_free_timer - Free the reserved channel for the hardlockup detector
+ * @hdata:	Data structure representing the reserved channel.
+ *
+ * Returns: none
+ */
+void hpet_hld_free_timer(struct hpet_hld_data *hld_data)
+{
+	hld_data->channel_priv->mode = HPET_MODE_UNUSED;
+	hld_data->channel_priv->in_use = 0;
+	kfree(hld_data);
+}
+
+/**
+ * hpet_hld_get_timer - Get an HPET channel for the hardlockup detector
+ *
+ * Reserve an HPET channel if available, supports FSB mode, and has sufficiently
+ * low frequency. This function is called by the hardlockup detector if enabled
+ * in the kernel command line.
+ *
+ * Returns: a pointer with the properties of the reserved HPET channel.
+ */
+struct hpet_hld_data *hpet_hld_get_timer(void)
+{
+	struct hpet_channel *hc = hpet_base.channels;
+	struct hpet_hld_data *hld_data;
+	int i, irq;
+
+	if (hpet_freq > HPET_HLD_MAX_FREQ)
+		return NULL;
+
+	for (i = 0; i < hpet_base.nr_channels; i++) {
+		hc = hpet_base.channels + i;
+
+		/*
+		 * Associate the first unused channel to the hardlockup
+		 * detector. Bailout if we cannot find one. This may happen if
+		 * the HPET clocksource has taken all the timers. The HPET
+		 * driver (/dev/hpet) has not taken any channels at this point.
+		 */
+		if (hc->mode == HPET_MODE_UNUSED)
+			break;
+	}
+
+	if (i == hpet_base.nr_channels)
+		return NULL;
+
+	if (!(hc->boot_cfg & HPET_TN_FSB_CAP))
+		return NULL;
+
+	hld_data = kzalloc(sizeof(*hld_data), GFP_KERNEL);
+	if (!hld_data)
+		return NULL;
+
+	hc->mode = HPET_MODE_NMI_WATCHDOG;
+	hc->in_use = 1;
+	hld_data->channel_priv = hc;
+
+	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP)
+		hld_data->has_periodic = true;
+
+	if (!hpet_domain)
+		hpet_domain = hpet_create_irq_domain(hpet_blockid);
+
+	if (!hpet_domain)
+		goto err;
+
+	/* Assign an IRQ with NMI delivery mode. */
+	irq = hpet_assign_irq(hpet_domain, hc, hc->num, true);
+	if (irq <= 0)
+		goto err;
+
+	hc->irq = irq;
+	hld_data->irq = irq;
+	hld_data->channel = i;
+	hld_data->ticks_per_second = hpet_freq;
+
+	return hld_data;
+
+err:
+	hpet_hld_free_timer(hld_data);
+	return NULL;
+}
+#endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
