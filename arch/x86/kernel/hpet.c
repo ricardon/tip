@@ -60,7 +60,7 @@ static void __iomem			*hpet_virt_address;
 
 static struct hpet_base			hpet_base;
 
-static bool				hpet_legacy_int_enabled;
+static bool				hpet_legacy_int_enabled = true;
 static unsigned long			hpet_freq;
 
 bool					boot_hpet_disable;
@@ -1001,7 +1001,7 @@ int __init hpet_enable(void)
 
 	clocksource_register_hz(&clocksource_hpet, (u32)hpet_freq);
 
-	if (id & HPET_ID_LEGSUP) {
+	if (id & HPET_ID_LEGSUP && 0) {
 		hpet_legacy_clockevent_register(&hpet_base.channels[0]);
 		hpet_base.channels[0].mode = HPET_MODE_LEGACY;
 		if (IS_ENABLED(CONFIG_HPET_EMULATE_RTC))
