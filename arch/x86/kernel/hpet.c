@@ -18,6 +18,7 @@ enum hpet_mode {
 	HPET_MODE_LEGACY,
 	HPET_MODE_CLOCKEVT,
 	HPET_MODE_DEVICE,
+	HPET_MODE_NMI_WATCHDOG,
 };
 
 struct hpet_channel {
@@ -177,6 +178,70 @@ do {								\
 		_hpet_print_config(__func__, __LINE__);	\
 } while (0)
 
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+struct hpet_hld_data *hld_data;
+
+struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void)
+{
+	struct hpet_channel *hc = hpet_base.channels;
+	int i, irq;
+
+	for (i = 0; i < hpet_base.nr_channels; i++) {
+		 hc = hpet_base.channels + i;
+
+		/*
+		 * Associate the first unused channel to the hardlockup
+		 * detector. Bailout if we cannot find one. This may happen if
+		 * the HPET clocksource has taken all the timers. The HPET driver
+		 * (/dev/hpet) should not take timers at this point as channels
+		 * for such driver can only be reserved from user space.
+		 */
+		if (hc->mode == HPET_MODE_UNUSED) {
+			hc->mode = HPET_MODE_NMI_WATCHDOG;
+			break;
+		}
+	}
+
+	if (hc->mode != HPET_MODE_NMI_WATCHDOG)
+		return NULL;
+
+	if (!(hc->boot_cfg & HPET_TN_FSB_CAP))
+		goto err1;
+
+	hld_data = kzalloc(sizeof(struct hpet_hld_data), GFP_KERNEL);
+	if (!hld_data)
+		goto err1;
+
+	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP)
+		hld_data->has_periodic = true;
+
+	hld_data->channel = i;
+	hld_data->ticks_per_second = hpet_freq;
+	hld_data->blockid = hpet_blockid;
+
+	if (!hpet_domain)
+		hpet_domain = hpet_create_irq_domain(hpet_blockid);
+
+	if (!hpet_domain)
+		goto err2;
+
+	irq = hpet_assign_irq(hpet_domain, hc, hc->num);
+	if (irq <= 0)
+		goto err2;
+
+	hc->irq = irq;
+	hld_data->irq = irq;
+	return hld_data;
+
+err2:
+	kfree(hld_data);
+	hld_data = NULL;
+err1:
+	hc->mode = HPET_MODE_UNUSED;
+	return NULL;
+}
+#endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
+
 /*
  * When the HPET driver (/dev/hpet) is enabled, we need to reserve
  * timer 0 and timer 1 in case of RTC emulation.
@@ -214,6 +279,7 @@ static void __init hpet_reserve_platform_timers(void)
 			break;
 		case HPET_MODE_CLOCKEVT:
 		case HPET_MODE_LEGACY:
+		case HPET_MODE_NMI_WATCHDOG:
 			hpet_reserve_timer(&hd, hc->num);
 			break;
 		}

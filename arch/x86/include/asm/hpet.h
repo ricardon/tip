@@ -106,6 +106,18 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
 
 #endif /* CONFIG_HPET_EMULATE_RTC */
 
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+struct hpet_hld_data {
+	bool		has_periodic;
+	u32		channel;
+	u64		ticks_per_second;
+	u8		blockid;
+	int		irq;
+};
+
+extern struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void);
+#endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
+
 #else /* CONFIG_HPET_TIMER */
 
 static inline int hpet_enable(void) { return 0; }
