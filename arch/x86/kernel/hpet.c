@@ -186,7 +186,8 @@ static void hpet_hardlockup_detector_reserve_timer(void)
 	struct hpet_channel *hc = hpet_base.channels;
 	int i;
 
-	hld_data = kzalloc(sizeof(struct hpet_hld_data), GFP_KERNEL);
+	hld_data = kzalloc(sizeof(struct hpet_hld_data) + cpumask_size(),
+			    GFP_KERNEL);
 
 	if (!hld_data)
 		return;

@@ -3,6 +3,7 @@
 #define _ASM_X86_HPET_H
 
 #include <linux/msi.h>
+#include <linux/irq_work.h>
 
 #ifdef CONFIG_HPET_TIMER
 
@@ -111,12 +112,26 @@ struct hpet_hld_data {
 	bool		has_periodic;
 	u32		channel;
 	u64		ticks_per_second;
+	u32		handling_cpu;
+	u32		enabled_cpus;
+	struct msi_msg	msi_msg;
+	struct irq_work	affinity_work;
+	unsigned long	cpu_monitored_mask[0];
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void);
+extern int hardlockup_detector_hpet_init(void);
+extern void hardlockup_detector_hpet_stop(void);
+extern void hardlockup_detector_hpet_enable(unsigned int cpu);
+extern void hardlockup_detector_hpet_disable(unsigned int cpu);
 #else
 static inline struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void)
 { return NULL; }
+static inline int hardlockup_detector_hpet_init(void)
+{ return -ENODEV; }
+static inline void hardlockup_detector_hpet_stop(void) {}
+static inline void hardlockup_detector_hpet_enable(unsigned int cpu) {}
+static inline void hardlockup_detector_hpet_disable(unsigned int cpu) {}
 #endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
 
 #else /* CONFIG_HPET_TIMER */
