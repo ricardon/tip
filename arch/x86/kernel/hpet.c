@@ -219,6 +219,7 @@ static void hpet_hardlockup_detector_reserve_timer(void)
 
 	hld_data->channel = i;
 	hld_data->ticks_per_second = hpet_freq;
+	hld_data->blockid = hpet_blockid;
 
 	return;
 

@@ -20,6 +20,7 @@
 #include <asm/irq_remapping.h>
 #include <asm/pci-direct.h>
 #include <asm/msidef.h>
+#include <asm/hpet.h>
 
 #include "irq_remapping.h"
 
@@ -1516,3 +1517,51 @@ int dmar_ir_hotplug(struct dmar_drhd_unit *dmaru, bool insert)
 
 	return ret;
 }
+
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+int hld_hpet_intremap_activate_irq(struct hpet_hld_data *hdata)
+{
+	u32 destid = apic->calc_dest_apicid(hdata->handling_cpu);
+	struct intel_ir_data *data;
+
+	data = (struct intel_ir_data *)hdata->intremap_data;
+	data->irte_entry.dest_id = IRTE_DEST(destid);
+	return modify_irte(&data->irq_2_iommu, &data->irte_entry);
+}
+
+int hld_hpet_intremap_alloc_irq(struct hpet_hld_data *hdata)
+{
+	struct intel_ir_data *data;
+	struct irq_alloc_info info;
+	struct intel_iommu *iommu;
+	struct irq_cfg irq_cfg;
+	int index;
+
+	iommu = map_hpet_to_ir(hdata->blockid);
+	if (!iommu)
+		return -ENODEV;
+
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	down_read(&dmar_global_lock);
+	index =  alloc_irte(iommu, &data->irq_2_iommu, 1);
+	up_read(&dmar_global_lock);
+	if (index < 0)
+		return index;
+
+	info.type = X86_IRQ_ALLOC_TYPE_HPET;
+	info.hpet_id = hdata->blockid;
+
+	/* Vector is not relevant if NMI is the delivery mode */
+	irq_cfg.vector = 0;
+	irq_cfg.delivery_mode = dest_NMI;
+	intel_irq_remapping_prepare_irte(data, &irq_cfg, &info, index, 0);
+
+	hdata->intremap_data = data;
+	memcpy(&hdata->msi_msg, &data->msi_entry, sizeof(hdata->msi_msg));
+
+	return 0;
+}
+#endif /* CONFIG_HARDLOCKUP_DETECTOR_HPET */
