@@ -103,4 +103,26 @@ static inline int is_hpet_enabled(void) { return 0; }
 #define default_setup_hpet_msi	NULL
 
 #endif
+
+#ifdef CONFIG_X86_HARDLOCKUP_DETECTOR_HPET
+/**
+ * struct hpet_hld_data - Data needed to operate the detector
+ * @has_periodic:		The HPET channel supports periodic mode
+ * @channel:			HPET channel assigned to the detector
+ * @channe_priv:		Private data of the assigned channel
+ * @ticks_per_second:		Frequency of the HPET timer
+ * @irq:			IRQ number assigned to the HPET channel
+ */
+struct hpet_hld_data {
+	bool			has_periodic;
+	u32			channel;
+	struct hpet_channel	*channel_priv;
+	u64			ticks_per_second;
+	int			irq;
+};
+
+extern struct hpet_hld_data *hpet_hld_get_timer(void);
+extern void hpet_hld_free_timer(struct hpet_hld_data *hdata);
+#endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
+
 #endif /* _ASM_X86_HPET_H */
