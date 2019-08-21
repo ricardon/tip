@@ -78,6 +78,11 @@ inline unsigned int hpet_readl(unsigned int a)
 	return readl(hpet_virt_address + a);
 }
 
+inline unsigned long hpet_readq(unsigned int a)
+{
+	return readq(hpet_virt_address + a);
+}
+
 inline void hpet_writel(unsigned int d, unsigned int a)
 {
 	writel(d, hpet_virt_address + a);
@@ -206,16 +211,25 @@ static void hpet_hardlockup_detector_reserve_timer(void)
 		}
 	}
 
+	ricardo_printk("channel will be %d\n", i);
 	if (hc->mode != HPET_MODE_NMI_WATCHDOG)
 		goto no_hld_channel;
 
+	ricardo_printk("will check timer boot_cfg [0x%x]", hc->boot_cfg);
 	if (!(hc->boot_cfg & HPET_TN_FSB_CAP)) {
+		ricardo_printk("NO, no FSP");
 		hc->mode = HPET_MODE_UNUSED;
 		goto no_hld_channel;
 	}
 
-	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP)
+	ricardo_printk("YES, FSP");
+
+	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP) {
+		ricardo_printk("YES periodic");
 		hld_data->has_periodic = true;
+	} else {
+		ricardo_printk("NO no periodic");
+	}
 
 	hld_data->channel = i;
 	hld_data->ticks_per_second = hpet_freq;
@@ -962,6 +976,7 @@ int __init hpet_enable(void)
 
 		cfg = hpet_readl(HPET_Tn_CFG(i));
 		hc->boot_cfg = cfg;
+		ricardo_printk("HPET channel %d boot_cfg[%08x]\n", i, cfg);
 		irq = (cfg & Tn_INT_ROUTE_CNF_MASK) >> Tn_INT_ROUTE_CNF_SHIFT;
 		hc->irq = irq;
 

@@ -426,6 +426,7 @@ static struct dmar_domain *to_dmar_domain(struct iommu_domain *dom)
 
 static int __init intel_iommu_setup(char *str)
 {
+	printk(KERN_ERR "==== %s %s\n", __func__, str);
 	if (!str)
 		return -EINVAL;
 	while (*str) {

@@ -3,6 +3,7 @@
    Copyright (C) 2001 Rusty Russell.
 
 */
+#define DEBUG
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/errno.h>
@@ -166,6 +167,12 @@ char *parse_args(const char *doing,
 
 	if (*args)
 		pr_debug("doing %s, parsing ARGS: '%s'\n", doing, args);
+	else
+		pr_debug("doing %s, parsing ARGS: NONE\n", doing);
+	pr_debug("====================================================\n");
+	dump_stack();
+	pr_debug("====================================================\n");
+
 
 	while (*args) {
 		int ret;

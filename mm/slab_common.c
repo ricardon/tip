@@ -1204,6 +1204,8 @@ void __init create_kmalloc_caches(slab_flags_t flags)
 {
 	int i, type;
 
+	ricardo_printk("@@@@@@@@@@@@@@@@@@@@ aqui\n");
+	dump_stack();
 	for (type = KMALLOC_NORMAL; type <= KMALLOC_RECLAIM; type++) {
 		for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++) {
 			if (!kmalloc_caches[type][i])
