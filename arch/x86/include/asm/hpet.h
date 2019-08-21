@@ -112,6 +112,7 @@ struct hpet_hld_data {
 	bool		has_periodic;
 	u32		channel;
 	u64		ticks_per_second;
+	u64		ticks_per_cpu;
 	u32		handling_cpu;
 	u32		enabled_cpus;
 	struct msi_msg	msi_msg;
