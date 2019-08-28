@@ -26,6 +26,7 @@
 #include "hist.h"
 #include "sort.h"
 #include "tool.h"
+#include "cacheline.h"
 #include "data.h"
 #include "event.h"
 #include "evlist.h"
@@ -248,7 +249,7 @@ static void compute_stats(struct c2c_hist_entry *c2c_he,
 static int process_sample_event(struct perf_tool *tool __maybe_unused,
 				union perf_event *event,
 				struct perf_sample *sample,
-				struct perf_evsel *evsel,
+				struct evsel *evsel,
 				struct machine *machine)
 {
 	struct c2c_hists *c2c_hists = &c2c.hists;
@@ -2027,7 +2028,7 @@ static int setup_nodes(struct perf_session *session)
 		c2c.node_info = 2;
 
 	c2c.nodes_cnt = session->header.env.nr_numa_nodes;
-	c2c.cpus_cnt  = session->header.env.nr_cpus_online;
+	c2c.cpus_cnt  = session->header.env.nr_cpus_avail;
 
 	n = session->header.env.numa_nodes;
 	if (!n)
@@ -2049,7 +2050,7 @@ static int setup_nodes(struct perf_session *session)
 	c2c.cpu2node = cpu2node;
 
 	for (node = 0; node < c2c.nodes_cnt; node++) {
-		struct cpu_map *map = n[node].map;
+		struct perf_cpu_map *map = n[node].map;
 		unsigned long *set;
 
 		set = bitmap_alloc(c2c.cpus_cnt);
@@ -2059,7 +2060,7 @@ static int setup_nodes(struct perf_session *session)
 		nodes[node] = set;
 
 		/* empty node, skip */
-		if (cpu_map__empty(map))
+		if (perf_cpu_map__empty(map))
 			continue;
 
 		for (cpu = 0; cpu < map->nr; cpu++) {
@@ -2236,8 +2237,8 @@ static void print_pareto(FILE *out)
 
 static void print_c2c_info(FILE *out, struct perf_session *session)
 {
-	struct perf_evlist *evlist = session->evlist;
-	struct perf_evsel *evsel;
+	struct evlist *evlist = session->evlist;
+	struct evsel *evsel;
 	bool first = true;
 
 	fprintf(out, "=================================================\n");
@@ -2567,7 +2568,7 @@ parse_callchain_opt(const struct option *opt, const char *arg, int unset)
 	return parse_callchain_report_opt(arg);
 }
 
-static int setup_callchain(struct perf_evlist *evlist)
+static int setup_callchain(struct evlist *evlist)
 {
 	u64 sample_type = perf_evlist__combined_sample_type(evlist);
 	enum perf_call_graph_mode mode = CALLCHAIN_NONE;

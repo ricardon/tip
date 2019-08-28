@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _PERF_XYARRAY_H_
-#define _PERF_XYARRAY_H_ 1
+#ifndef __LIBPERF_INTERNAL_XYARRAY_H
+#define __LIBPERF_INTERNAL_XYARRAY_H
 
+#include <linux/compiler.h>
 #include <sys/types.h>
 
 struct xyarray {
@@ -10,7 +11,7 @@ struct xyarray {
 	size_t entries;
 	size_t max_x;
 	size_t max_y;
-	char contents[];
+	char contents[] __aligned(8);
 };
 
 struct xyarray *xyarray__new(int xlen, int ylen, size_t entry_size);
@@ -32,4 +33,4 @@ static inline int xyarray__max_x(struct xyarray *xy)
 	return xy->max_x;
 }
 
-#endif /* _PERF_XYARRAY_H_ */
+#endif /* __LIBPERF_INTERNAL_XYARRAY_H */

@@ -20,6 +20,7 @@
 
 #include "asm/bug.h"
 
+#include "debug.h"
 #include "hist.h"
 #include "sort.h"
 #include "machine.h"
@@ -1077,7 +1078,7 @@ int callchain_cursor_append(struct callchain_cursor *cursor,
 
 int sample__resolve_callchain(struct perf_sample *sample,
 			      struct callchain_cursor *cursor, struct symbol **parent,
-			      struct perf_evsel *evsel, struct addr_location *al,
+			      struct evsel *evsel, struct addr_location *al,
 			      int max_stack)
 {
 	if (sample->callchain == NULL && !symbol_conf.show_branchflag_count)
