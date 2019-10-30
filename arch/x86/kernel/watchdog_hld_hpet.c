@@ -17,9 +17,12 @@
 #define pr_fmt(fmt) "NMI hpet watchdog: " fmt
 
 #include <linux/nmi.h>
+#include <linux/irq.h>
+#include <linux/interrupt.h>
 #include <linux/hpet.h>
 #include <linux/slab.h>
 #include <asm/msidef.h>
+#include <asm/irq_remapping.h>
 #include <asm/hpet.h>
 
 static struct hpet_hld_data *hld_data;
@@ -138,6 +141,25 @@ static bool is_hpet_wdt_interrupt(struct hpet_hld_data *hdata)
 	return false;
 }
 
+/** irq_remapping_enabled() - Detect if interrupt remapping is enabled
+ * @hdata:	A data structure with the HPET block id
+ *
+ * Determine if the HPET block that the hardlockup detector is under
+ * the remapped interrupt domain.
+ *
+ * Returns: True interrupt remapping is enabled. False otherwise.
+ */
+static bool irq_remapping_enabled(struct hpet_hld_data *hdata)
+{
+	struct irq_alloc_info info;
+
+	init_irq_alloc_info(&info, NULL);
+	info.type = X86_IRQ_ALLOC_TYPE_HPET;
+	info.hpet_id = hpet_blockid;
+
+	return !!irq_remapping_get_ir_irq_domain(&info);
+}
+
 /**
  * compose_msi_msg() - Populate address and data fields of an MSI message
  * @hdata:	A data strucure with the message to populate
@@ -176,6 +198,14 @@ static void compose_msi_msg(struct hpet_hld_data *hdata)
 static int update_msi_destid(struct hpet_hld_data *hdata)
 {
 	u32 destid;
+
+	if (irq_remapping_enabled(hdata)) {
+		int ret;
+
+		ret = irq_set_affinity(hdata->irq,
+				       cpumask_of(hdata->handling_cpu));
+		return ret;
+	}
 
 	destid = apic->calc_dest_apicid(hdata->handling_cpu);
 	hdata->msi_msg.arch_addr_lo.destid_0_7 = destid;
@@ -382,6 +412,12 @@ static int hardlockup_detector_nmi_handler(unsigned int type,
 	return NMI_DONE;
 }
 
+static irqreturn_t hardlockup_detector_irq_handler(int irq, void *data)
+{
+	pr_err("Oops! Received a non-NMI interrupt!\n");
+	return IRQ_HANDLED;
+}
+
 /**
  * setup_irq_msi_mode() - Configure the timer to deliver an MSI interrupt
  * @data:	Data associated with the instance of the HPET timer to configure
@@ -394,12 +430,20 @@ static int hardlockup_detector_nmi_handler(unsigned int type,
  */
 static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 {
+	s32 ret;
 	u32 v;
 
-	compose_msi_msg(hdata);
-	hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->channel));
-	hpet_writel(hdata->msi_msg.address_lo,
-		    HPET_Tn_ROUTE(hdata->channel) + 4);
+	if (irq_remapping_enabled(hdata)) {
+		ret = request_irq(hld_data->irq, hardlockup_detector_irq_handler,
+				  IRQF_TIMER, "hpet_hld", hld_data);
+		if (ret)
+			return ret;
+	} else {
+		compose_msi_msg(hdata);
+		hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->channel));
+		hpet_writel(hdata->msi_msg.address_lo,
+			    HPET_Tn_ROUTE(hdata->channel) + 4);
+	}
 
 	v = hpet_readl(HPET_Tn_CFG(hdata->channel));
 	v |= HPET_TN_FSB;
