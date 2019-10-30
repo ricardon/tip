@@ -70,14 +70,19 @@ void __init hardlockup_detector_disable(void)
 
 static int __init hardlockup_panic_setup(char *str)
 {
-	if (parse_option_str(str, "panic"))
+	if (parse_option_str(str, "panic")) {
+		printk(KERN_ERR ">>> found panic\n");
 		hardlockup_panic = 1;
-	else if (parse_option_str(str, "nopanic"))
+	} else if (parse_option_str(str, "nopanic")) {
+		printk(KERN_ERR ">>> found nopanic\n");
 		hardlockup_panic = 0;
-	else if (parse_option_str(str, "0"))
+	} else if (parse_option_str(str, "0")) {
+		printk(KERN_ERR ">>> found 0\n");
 		nmi_watchdog_user_enabled = 0;
-	else if (parse_option_str(str, "1"))
+	} else if (parse_option_str(str, "1")) {
+		printk(KERN_ERR ">>> found 1\n");
 		nmi_watchdog_user_enabled = 1;
+	}
 	return 1;
 }
 __setup("nmi_watchdog=", hardlockup_panic_setup);
