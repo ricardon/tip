@@ -1464,6 +1464,9 @@ struct hpet_hld_data *hpet_hld_get_timer(void)
 	if (!hpet_domain)
 		goto err;
 
+	if (hpet_domain->parent != x86_vector_domain)
+		hld_data->intr_remap_enabled = true;
+
 	hc->mode = HPET_MODE_NMI_WATCHDOG;
 	irq = hpet_assign_irq(hpet_domain, hc, hc->num);
 	if (irq <= 0)

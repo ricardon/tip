@@ -176,6 +176,14 @@ static int update_msi_destid(struct hpet_hld_data *hdata)
 {
 	u32 destid;
 
+	if (hdata->intr_remap_enabled) {
+		int ret;
+
+		ret = irq_set_affinity(hdata->irq,
+				       cpumask_of(hdata->handling_cpu));
+		return ret;
+	}
+
 	destid = apic->calc_dest_apicid(hdata->handling_cpu);
 	/*
 	 * HPET only supports a 32-bit MSI address register. Thus, only
@@ -393,26 +401,52 @@ static int hardlockup_detector_nmi_handler(unsigned int type,
 	return NMI_DONE;
 }
 
+/*
+ * When interrupt remapping is enabled, we request the irq for the detector
+ * using request_irq() and then we fixup the delivery mode to NMI using
+ * is_hpet_irq_hardlockup_detector(). If the latter fails, we will see a non-
+ * NMI interrupt.
+ *
+ */
+static irqreturn_t hardlockup_detector_irq_handler(int irq, void *data)
+{
+	pr_err_once("Received a non-NMI interrupt. The HLD detector always uses NMIs!\n");
+	return IRQ_HANDLED;
+}
+
 /**
  * setup_irq_msi_mode() - Configure the timer to deliver an MSI interrupt
  * @data:	Data associated with the instance of the HPET timer to configure
  *
  * Configure the HPET timer to deliver interrupts via the Front-
  * Side Bus.
+ *
+ * Returns:
+ * 0 success. An error code if setup was unsuccessful.
  */
-static void setup_irq_msi_mode(struct hpet_hld_data *hdata)
+static int setup_irq_msi_mode(struct hpet_hld_data *hdata)
 {
+	s32 ret;
 	u32 v;
 
-	compose_msi_msg(hdata);
-	hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->channel));
-	hpet_writel(hdata->msi_msg.address_lo,
-		    HPET_Tn_ROUTE(hdata->channel) + 4);
+	if (hdata->intr_remap_enabled) {
+		ret = request_irq(hld_data->irq, hardlockup_detector_irq_handler,
+				  IRQF_TIMER, "hpet_hld", hld_data);
+		if (ret)
+			return ret;
+	} else {
+		compose_msi_msg(hdata);
+		hpet_writel(hdata->msi_msg.data, HPET_Tn_ROUTE(hdata->channel));
+		hpet_writel(hdata->msi_msg.address_lo,
+			    HPET_Tn_ROUTE(hdata->channel) + 4);
+	}
 
 	v = hpet_readl(HPET_Tn_CFG(hdata->channel));
 	v |= HPET_TN_FSB;
 
 	hpet_writel(v, HPET_Tn_CFG(hdata->channel));
+
+	return 0;
 }
 
 /**
@@ -430,7 +464,9 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 {
 	int ret;
 
-	setup_irq_msi_mode(hdata);
+	ret = setup_irq_msi_mode(hdata);
+	if (ret)
+		return ret;
 
 	ret = register_nmi_handler(NMI_WATCHDOG,
 				   hardlockup_detector_nmi_handler, 0,
