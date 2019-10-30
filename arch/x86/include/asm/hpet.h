@@ -3,6 +3,7 @@
 #define _ASM_X86_HPET_H
 
 #include <linux/msi.h>
+#include <linux/irq_work.h>
 
 #ifdef CONFIG_HPET_TIMER
 
@@ -112,9 +113,29 @@ struct hpet_hld_data {
 	u32		channel;
 	u64		ticks_per_second;
 	int		irq;
+	/* CPU handling the HPET interrupt*/
+	u32		handling_cpu;
+	struct msi_msg	msi_msg;
+	/* CPUs monitored by the hardlockup detector */
+	cpumask_var_t	monitored_cpumask;
+	/*
+	 * Auxiliar mask to handle IPIs. Both sending and receiving CPUS write
+	 * to it. Hence, we cannot reuse @monitored_cpumask.
+	 */
+	cpumask_var_t	ipi_cpumask;
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void);
+extern int hardlockup_detector_hpet_init(void);
+extern void hardlockup_detector_hpet_stop(void);
+extern void hardlockup_detector_hpet_enable(unsigned int cpu);
+extern void hardlockup_detector_hpet_disable(unsigned int cpu);
+#else
+static inline int hardlockup_detector_hpet_init(void)
+{ return -ENODEV; }
+static inline void hardlockup_detector_hpet_stop(void) {}
+static inline void hardlockup_detector_hpet_enable(unsigned int cpu) {}
+static inline void hardlockup_detector_hpet_disable(unsigned int cpu) {}
 #endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
 
 #else /* CONFIG_HPET_TIMER */
