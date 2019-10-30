@@ -109,6 +109,7 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
  * @tsc_ticks_per_group:	TSC ticks that must elapse for each group of
  *				monitored CPUs.
  * @irq:			IRQ number assigned to the HPET channel
+ * @int_remap_enabled:		True if interrupt remapping is enabled
  * @handling_cpu:		CPU handling the HPET interrupt
  * @pkgs_per_group:		Number of physical packages in a group of CPUs
  *				receiving an IPI
@@ -133,6 +134,7 @@ struct hpet_hld_data {
 	u64		tsc_next;
 	u64		tsc_ticks_per_group;
 	int		irq;
+	bool		intr_remap_enabled;
 	u32		handling_cpu;
 	u32		pkgs_per_group;
 	u32		nr_groups;
