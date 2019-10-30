@@ -114,6 +114,16 @@ config IOMMU_LEAK
 config HAVE_MMIOTRACE_SUPPORT
 	def_bool y
 
+config X86_HARDLOCKUP_DETECTOR_HPET
+	bool "HPET Timer for Hard Lockup Detection"
+	select HARDLOCKUP_DETECTOR_CORE
+	depends on HARDLOCKUP_DETECTOR && HPET_TIMER && GENERIC_MSI_IRQ
+	help
+	  The hardlockup detector is driven by one counter of the Performance
+	  Monitoring Unit (PMU) per CPU. Say y to instead drive the
+	  hardlockup detector using a High-Precision Event Timer and make the
+	  PMU counters available for other purposes.
+
 config X86_DECODER_SELFTEST
 	bool "x86 instruction decoder selftest"
 	depends on DEBUG_KERNEL && INSTRUCTION_DECODER
