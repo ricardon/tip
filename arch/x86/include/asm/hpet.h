@@ -149,6 +149,7 @@ extern void hardlockup_detector_hpet_stop(void);
 extern void hardlockup_detector_hpet_enable(unsigned int cpu);
 extern void hardlockup_detector_hpet_disable(unsigned int cpu);
 extern void hardlockup_detector_switch_to_perf(void);
+extern bool hpet_hardlockup_detector_hpet_is_irq(struct irq_alloc_info *info);
 #else
 static inline int hardlockup_detector_hpet_init(void)
 { return -ENODEV; }
@@ -156,6 +157,8 @@ static inline void hardlockup_detector_hpet_stop(void) {}
 static inline void hardlockup_detector_hpet_enable(unsigned int cpu) {}
 static inline void hardlockup_detector_hpet_disable(unsigned int cpu) {}
 static inline void hardlockup_detector_switch_to_perf(void) {}
+static inline bool hpet_hardlockup_detector_hpet_is_irq(struct irq_alloc_info *info)
+{ return false; }
 #endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
 
 #else /* CONFIG_HPET_TIMER */

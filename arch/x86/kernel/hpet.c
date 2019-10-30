@@ -251,6 +251,39 @@ err_nomem:
 	hc->mode = HPET_MODE_UNUSED;
 	return NULL;
 }
+
+/**
+ * hpet_hardlockup_detector_hpet_is_irq() - Identify hld interrupt
+ * @info:	Interrupt allocation info, with private HPET channel data
+ *
+ * The HPET hardlockup detector is special as it needs its interrupts delivered
+ * as NMI. However, for interrupt remapping we use the existing irq subsystem
+ * to configure and route the HPET interrupt. Unfortunately, there is not a
+ * IRQF_NMI flag for x86. Instead, identify whether the interrupt being
+ * allocated for the HPET channel belongs to the hardlockup detector.
+ *
+ * Returns: True if @info indicates that it belongs to the HPET hardlockup
+ * detector. False otherwise.
+ */
+bool hpet_hardlockup_detector_hpet_is_irq(struct irq_alloc_info *info)
+{
+	struct hpet_channel *hc = info->hpet_data;
+
+	if (!info)
+		return false;
+
+	if (info->type != X86_IRQ_ALLOC_TYPE_HPET)
+		return false;
+
+	hc = info->hpet_data;
+	if (!hc)
+		return false;
+
+	if (hc->mode == HPET_MODE_NMI_WATCHDOG)
+		return true;
+
+	return false;
+}
 #endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
 
 /*
