@@ -13,25 +13,6 @@
 #undef  pr_fmt
 #define pr_fmt(fmt) "hpet: " fmt
 
-enum hpet_mode {
-	HPET_MODE_UNUSED,
-	HPET_MODE_LEGACY,
-	HPET_MODE_CLOCKEVT,
-	HPET_MODE_DEVICE,
-	HPET_MODE_NMI_WATCHDOG,
-};
-
-struct hpet_channel {
-	struct clock_event_device	evt;
-	unsigned int			num;
-	unsigned int			cpu;
-	unsigned int			irq;
-	unsigned int			in_use;
-	enum hpet_mode			mode;
-	unsigned int			boot_cfg;
-	char				name[10];
-};
-
 struct hpet_base {
 	unsigned int			nr_channels;
 	unsigned int			nr_clockevents;

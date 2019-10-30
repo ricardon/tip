@@ -2,6 +2,7 @@
 #ifndef _ASM_X86_HPET_H
 #define _ASM_X86_HPET_H
 
+#include <linux/clockchips.h>
 #include <linux/msi.h>
 #include <linux/irq_work.h>
 
@@ -61,6 +62,25 @@
  * then 32 bit HPET counter wrapsaround in less than 0.5 sec.
  */
 #define HPET_MIN_PERIOD		100000UL
+
+enum hpet_mode {
+	HPET_MODE_UNUSED,
+	HPET_MODE_LEGACY,
+	HPET_MODE_CLOCKEVT,
+	HPET_MODE_DEVICE,
+	HPET_MODE_NMI_WATCHDOG,
+};
+
+struct hpet_channel {
+	struct clock_event_device	evt;
+	unsigned int			num;
+	unsigned int			cpu;
+	unsigned int			irq;
+	unsigned int			in_use;
+	enum hpet_mode			mode;
+	unsigned int			boot_cfg;
+	char				name[10];
+};
 
 /* hpet memory map physical address */
 extern unsigned long hpet_address;
