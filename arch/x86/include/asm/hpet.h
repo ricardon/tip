@@ -142,8 +142,12 @@ struct hpet_hld_data {
 	u64		tsc_ticks_per_cpu;
 	u32		handling_cpu;
 	u32		enabled_cpus;
+	u32		nr_groups;
+	u32		cpus_per_group;
 	struct msi_msg	msi_msg;
 	struct irq_work	affinity_work;
+	cpumask_var_t	cpu_target_mask;
+	cpumask_var_t	cpu_ipi_mask;
 	unsigned long	cpu_monitored_mask[0];
 };
 

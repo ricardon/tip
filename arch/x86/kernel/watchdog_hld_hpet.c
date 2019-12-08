@@ -503,13 +503,17 @@ static void update_timer_irq_affinity(struct irq_work *work)
 	struct hpet_hld_data *hdata = container_of(work, struct hpet_hld_data,
 					      affinity_work);
 	u32 cpu = smp_processor_id();
-
+#if 0
 	cpu = cpumask_next(cpu, to_cpumask(hdata->cpu_monitored_mask));
 	if (cpu >= nr_cpu_ids)
 		cpu = cpumask_first(to_cpumask(hdata->cpu_monitored_mask));
 
 	hdata->handling_cpu = cpu;
 	update_msi_destid(hdata);
+#else
+	hdata->handling_cpu = 0;
+	update_msi_destid(hdata);
+#endif
 }
 
 /**
@@ -528,17 +532,33 @@ static void update_timer_irq_affinity(struct irq_work *work)
 static int hardlockup_detector_nmi_handler(unsigned int type,
 					   struct pt_regs *regs)
 {
+
 	struct hpet_hld_data *hdata = hld_data;
+	int cpu = smp_processor_id();
 
-	if (!is_hpet_wdt_interrupt(hdata))
-		return NMI_DONE;
+	if (is_hpet_wdt_interrupt(hdata)) {
+		ricardo_printk("%d handling CPUNMI\n", cpu);
+		cpumask_copy(hld_data->cpu_ipi_mask, hld_data->cpu_target_mask);
+		cpumask_clear_cpu(cpu, hld_data->cpu_ipi_mask);
+		ricardo_printk("%d target: %*pbl ipi: %*pbl\n",
+				smp_processor_id(),
+				cpumask_pr_args(hld_data->cpu_target_mask),
+				cpumask_pr_args(hld_data->cpu_ipi_mask));
+		apic->send_IPI_mask_allbutself(hld_data->cpu_ipi_mask, NMI_VECTOR);
+		irq_work_queue(&hdata->affinity_work);
+		kick_timer(hdata, !(hdata->has_periodic));
+		inspect_for_hardlockups(regs);
 
-	inspect_for_hardlockups(regs);
+		return NMI_HANDLED;
+	}
 
-	irq_work_queue(&hdata->affinity_work);
-	kick_timer(hdata, !(hdata->has_periodic));
+	if (cpumask_test_and_clear_cpu(cpu, hld_data->cpu_ipi_mask)) {
+		ricardo_printk("%d NMI non-handling CPU\n", cpu);
+		inspect_for_hardlockups(regs);
+		return NMI_HANDLED;
+	}
 
-	return NMI_HANDLED;
+	return NMI_DONE;
 }
 
 
@@ -644,6 +664,22 @@ static void update_ticks_per_cpu(struct hpet_hld_data *hdata)
 	hdata->tsc_ticks_per_cpu = temp;
 }
 
+static void set_target_cpumask(struct hpet_hld_data *hdata, unsigned int cpu)
+{
+	/* TODO: replace with target_mask */
+	if (cpumask_test_cpu(cpu, topology_die_cpumask(hdata->handling_cpu)))
+		cpumask_set_cpu(cpu, hdata->cpu_target_mask);
+
+	ricardo_printk("updated target mask: %*pbl\n", cpumask_pr_args(hdata->cpu_target_mask));
+}
+
+static void setup_cpu_groups(struct hpet_hld_data *hdata, unsigned int cpu)
+{
+	hdata->nr_groups = 1;
+	hdata->cpus_per_group = 8;
+	set_target_cpumask(hdata, cpu);
+}
+
 /**
  * hardlockup_detector_hpet_enable() - Enable the hardlockup detector
  * @cpu:	CPU Index in which the watchdog will be enabled.
@@ -667,6 +703,7 @@ void hardlockup_detector_hpet_enable(unsigned int cpu)
 		enable_timer(hld_data);
 	}
 
+	setup_cpu_groups(hld_data, cpu);
 	/*
 	 * When in periodic mode, we only kick the timer here. Hence,
 	 * as there are now more CPUs to monitor, we need to adjust the
@@ -700,6 +737,7 @@ void hardlockup_detector_hpet_disable(unsigned int cpu)
 	if (!hld_data->enabled_cpus)
 		return;
 
+	setup_cpu_groups(hld_data, cpu);
 	ricardo_printk("here\n");
 
 	cpu = cpumask_first(to_cpumask(hld_data->cpu_monitored_mask));
@@ -777,12 +815,25 @@ int __init hardlockup_detector_hpet_init(void)
 	disable_timer(hld_data);
 
 	ricardo_printk("here\n");
-
 	ret = setup_hpet_irq(hld_data);
 	if (ret) {
 		kfree(hld_data);
 		hld_data = NULL;
 		return ret;
+	}
+
+	ricardo_printk("here\n");
+	if (!zalloc_cpumask_var(&hld_data->cpu_target_mask, GFP_KERNEL)) {
+		kfree(hld_data);
+		hld_data = NULL;
+		return -ENOMEM;
+	}
+
+	if (!zalloc_cpumask_var(&hld_data->cpu_ipi_mask, GFP_KERNEL)) {
+		free_cpumask_var(hld_data->cpu_target_mask);
+		kfree(hld_data);
+		hld_data = NULL;
+		return -ENOMEM;
 	}
 
 	v = hpet_readl(HPET_Tn_CFG(hld_data->channel));
