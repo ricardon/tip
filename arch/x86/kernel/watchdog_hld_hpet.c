@@ -675,8 +675,16 @@ static void set_target_cpumask(struct hpet_hld_data *hdata, unsigned int cpu)
 
 static void setup_cpu_groups(struct hpet_hld_data *hdata, unsigned int cpu)
 {
-	hdata->nr_groups = 1;
-	hdata->cpus_per_group = 8;
+	struct cpuinfo_x86 *c = &cpu_data(cpu);
+
+	/*
+	 * Assume all cores have the same number of SMT siblings and all
+	 * dies/packages have the same number of cores.
+	 */
+	hdata->cpus_per_group = c->x86_max_cores * smp_num_siblings;
+	hdata->nr_groups = DIV_ROUND_UP(nr_cpu_ids, hdata->cpus_per_group);
+	printk(KERN_ERR "nr_cpuids %u, max_cores %u max_cores, smp_num_siblings %u, G %u N %u\n",
+		nr_cpu_ids, c->x86_max_cores, smp_num_siblings, hdata->nr_groups, hdata->cpus_per_group);
 	set_target_cpumask(hdata, cpu);
 }
 
