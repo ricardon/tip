@@ -233,6 +233,7 @@ static void pat_bsp_init(u64 pat)
 
 static void pat_ap_init(u64 pat)
 {
+	ricardo_printk(KERN_ERR "PAT set in AP\n");
 	if (!boot_cpu_has(X86_FEATURE_PAT)) {
 		/*
 		 * If this happens we are on a secondary CPU, but switched to

@@ -664,8 +664,67 @@ static void update_ticks_per_cpu(struct hpet_hld_data *hdata)
 	hdata->tsc_ticks_per_cpu = temp;
 }
 
-static void set_target_cpumask(struct hpet_hld_data *hdata, unsigned int cpu)
+static unsigned get_first_cpu_in_next_die(unsigned int this_cpu)
 {
+	u16 this_cpu_die_id = topology_die_id(this_cpu);
+	u16 next_cpu_die_id = this_cpu_die_id;
+	unsigned int next_cpu = this_cpu;
+	int safe = 0;
+
+
+}
+
+static void set_target_cpumask(struct hpet_hld_data *hdata, unsigned int cpu)
+{	
+	int i;
+
+	cpumask_and(hdata->cpu_target_mask,
+		    topology_core_cpumask(hdata->handling_cpu),
+		    to_cpumask(hdata->cpu_monitored_mask));
+
+	/*
+	 * If there is only one die per group, then target only the CPUs
+	 * in the same die as the handling CPU
+	 */
+	if (hdata->dies_per_group == 1)
+		return;
+
+	for (i = 0; i < hdata->dies_per_group; i++) {
+		u16 this_core_id, next_core_id;
+		unsigned int next_cpu = hdata->handling_cpu;
+		
+		this_core_id = topology_core_id(hdata->handling_cpu);
+		next_core_id = this_core_id;
+
+		while (this_core_id == next_core_id) {
+			next_cpu = cpumask_next_wrap(next_cpu,
+						     to_cpumask(hdata->cpu_monitored_mask),
+						     nr_cpu_ids,
+						     true);
+			/*
+			 * Skip if cpumas_next_wrap() indicates it has wrapped
+			 * around.
+			 */
+			if (next_cpu >= nr_cpu_ids)
+				continue;
+
+			/*
+			 * Finish if we are back to the starting CPU. This can
+			 * happen if in a multi-die/package system only one
+			 * die/package is online.
+			 */
+			if (next_cpu == hdata->handling_cpu)
+				break;
+
+			next_core_id = topology_core_id(next_cpu);
+			cpumask_or(hdata->cpu_target_mask,
+				   topology_core_cpumask(next_cpu),
+				   to_cpumask(hdata->cpu_monitored_mask));
+		}
+		
+
+	}
+	
 	/* TODO: replace with target_mask */
 	if (cpumask_test_cpu(cpu, topology_die_cpumask(hdata->handling_cpu)))
 		cpumask_set_cpu(cpu, hdata->cpu_target_mask);
@@ -676,15 +735,24 @@ static void set_target_cpumask(struct hpet_hld_data *hdata, unsigned int cpu)
 static void setup_cpu_groups(struct hpet_hld_data *hdata, unsigned int cpu)
 {
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
+	hdata->nr_groups = -1;
+	hdata->dies_per_group = 1;
 
 	/*
-	 * Assume all cores have the same number of SMT siblings and all
-	 * dies/packages have the same number of cores.
+	 * We need watchdog_thresh >= nr_groups to keep the HPET timer to fire
+	 * each 1 second or less frequently. Thus, we group together one or more
+	 * dies/packages until we reach such condition.
 	 */
-	hdata->cpus_per_group = c->x86_max_cores * smp_num_siblings;
-	hdata->nr_groups = DIV_ROUND_UP(nr_cpu_ids, hdata->cpus_per_group);
+	while (watchdog_thresh < hdata->nr_groups) {
+		hdata->cpus_per_group = c->x86_max_cores * smp_num_siblings *
+					hdata->dies_per_group;
+		hdata->nr_groups = DIV_ROUND_UP(nr_cpu_ids, hdata->cpus_per_group);
+		hdata->dies_per_group++;
+	}
+
 	printk(KERN_ERR "nr_cpuids %u, max_cores %u max_cores, smp_num_siblings %u, G %u N %u\n",
 		nr_cpu_ids, c->x86_max_cores, smp_num_siblings, hdata->nr_groups, hdata->cpus_per_group);
+
 	set_target_cpumask(hdata, cpu);
 }
 

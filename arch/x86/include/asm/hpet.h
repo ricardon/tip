@@ -144,6 +144,7 @@ struct hpet_hld_data {
 	u32		enabled_cpus;
 	u32		nr_groups;
 	u32		cpus_per_group;
+	u32		dies_per_group;
 	struct msi_msg	msi_msg;
 	struct irq_work	affinity_work;
 	cpumask_var_t	cpu_target_mask;
