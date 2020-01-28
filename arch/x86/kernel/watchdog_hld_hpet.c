@@ -45,6 +45,14 @@ static void kick_timer(struct hpet_hld_data *hdata, bool force)
 	 * are able to update the comparator before the counter reaches such new
 	 * value.
 	 *
+	 * Each CPU must be monitored every watch_thresh seconds. In order to
+	 * keep the HPET channel interrupt under 1 per second, CPUs are targeted
+	 * by groups. Each group is target separately.
+	 *
+	 *   ticks_per_group = watch_thresh * ticks_per_second / nr_groups
+	 *
+	 * as computed in update_ticks_per_group().
+	 *
 	 * Let it wrap around if needed.
 	 */
 
@@ -52,14 +60,14 @@ static void kick_timer(struct hpet_hld_data *hdata, bool force)
 		return;
 
 	count = hpet_readl(HPET_COUNTER);
-	new_compare = count + watchdog_thresh * hdata->ticks_per_second;
+	new_compare = count + watchdog_thresh * hdata->ticks_per_group;
 
 	if (!hdata->has_periodic) {
 		hpet_writel(new_compare, HPET_Tn_CMP(hdata->channel));
 		return;
 	}
 
-	period = watchdog_thresh * hdata->ticks_per_second;
+	period = watchdog_thresh * hdata->ticks_per_group;
 	hpet_set_comparator_periodic(hdata->channel, (u32)new_compare,
 				     (u32)period);
 }
@@ -408,6 +416,27 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 }
 
 /**
+ * update_ticks_per_group() - Update the number of HPET ticks CPU group
+ * @hdata:     struct with the timer's the ticks-per-second and CPU mask
+ *
+ * From the overall ticks-per-second of the timer, compute the number of ticks
+ * after which the timer should expire to monitor each CPU every watch_thresh
+ * seconds. The monitored CPUs have been partitioned into groups, and the HPET
+ * channel targets one group at a time.
+ */
+static void update_ticks_per_group(struct hpet_hld_data *hdata)
+{
+	u64 temp = hdata->ticks_per_second;
+
+	/* Only update if there are CPUs to monitor. */
+	if (!hdata->nr_groups)
+		return;
+
+	do_div(temp, hdata->nr_groups);
+	hdata->ticks_per_group = temp;
+}
+
+/**
  * hardlockup_detector_hpet_enable() - Enable the hardlockup detector
  * @cpu:	CPU Index in which the watchdog will be enabled.
  *
@@ -420,6 +449,7 @@ void hardlockup_detector_hpet_enable(unsigned int cpu)
 	cpumask_set_cpu(cpu, hld_data->monitored_cpumask);
 
 	setup_cpu_groups(hld_data);
+	update_ticks_per_group(hld_data);
 
 	update_ipi_target_cpumask(hld_data);
 
@@ -432,7 +462,14 @@ void hardlockup_detector_hpet_enable(unsigned int cpu)
 		update_msi_destid(hld_data);
 		kick_timer(hld_data, true);
 		enable_timer(hld_data);
+		return;
 	}
+
+	/*
+	 * Kick timer in case the number of monitored CPUs requires a change in
+	 * the timer period.
+	 */
+	kick_timer(hld_data, hld_data->has_periodic);
 }
 
 /**
@@ -465,9 +502,15 @@ void hardlockup_detector_hpet_disable(unsigned int cpu)
 	update_msi_destid(hld_data);
 
 	setup_cpu_groups(hld_data);
+	update_ticks_per_group(hld_data);
 
 	update_ipi_target_cpumask(hld_data);
 
+	/*
+	 * Kick timer in case the number of monitored CPUs requires a change in
+	 * the timer period.
+	 */
+	kick_timer(hld_data, hld_data->has_periodic);
 	enable_timer(hld_data);
 }
 
