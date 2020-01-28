@@ -112,6 +112,7 @@ struct hpet_hld_data {
 	bool		has_periodic;
 	u32		channel;
 	u64		ticks_per_second;
+	u64		ticks_per_group;
 	int		irq;
 	/* CPU handling the HPET interrupt*/
 	u32		handling_cpu;
