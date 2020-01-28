@@ -102,6 +102,8 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
  * @has_periodic:		The HPET channel supports periodic mode
  * @channel:			HPET channel assigned to the detector
  * @ticks_per_second:		Frequency of the HPET timer
+ * @ticks_per_group:		HPET ticks per group that must elapse before
+ *				the timer expires
  * @irq:			IRQ number assigned to the HPET channel
  * @handling_cpu:		CPU handling the HPET interrupt
  * @pkgs_per_group:		Number of physical packages in a group of CPUs
@@ -123,6 +125,7 @@ struct hpet_hld_data {
 	bool		has_periodic;
 	u32		channel;
 	u64		ticks_per_second;
+	u64		ticks_per_group;
 	int		irq;
 	u32		handling_cpu;
 	u32		pkgs_per_group;
