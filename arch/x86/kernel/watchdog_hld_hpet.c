@@ -33,6 +33,58 @@ static struct hpet_hld_data *hld_data;
 static bool hardlockup_use_hpet;
 static u64 tsc_next_error;
 
+#define HACK_TOPOLOGY
+static bool topology_hack_enabled;
+#ifdef HACK_TOPOLOGY
+#ifdef topology_physical_package_id
+#undef topology_physical_package_id
+static u16 topology_physical_package_id(int cpu)
+{
+	switch (cpu) {
+	case 0:
+	case 2:
+	case 4:
+	case 6:
+		return 0;
+	case 1:
+	case 3:
+	case 5:
+	case 7:
+		return 1;
+	}
+
+}
+#endif
+
+#ifdef topology_core_cpumask
+#undef topology_core_cpumask
+
+DEFINE_PER_CPU_READ_MOSTLY(cpumask_var_t, my_cpu_core_map);
+EXPORT_PER_CPU_SYMBOL(my_cpu_core_map);
+
+static void hack_topology(void)
+{	int i, j;
+
+	for_each_possible_cpu(i) {
+		if(!zalloc_cpumask_var(&per_cpu(my_cpu_core_map, i), GFP_KERNEL)) {
+			ricardo_printk("topology hack failed!\n");
+			return;
+		}
+		for_each_possible_cpu(j) {
+			if (!((j + i) % 2))
+				cpumask_set_cpu(j, per_cpu(my_cpu_core_map, i));
+		}
+		ricardo_printk("HACKED TOPOLOGY. Die mask CPU%d: %*pbl\n", i, cpumask_pr_args(per_cpu(my_cpu_core_map, i)));
+	}
+	topology_hack_enabled = true;
+}
+
+#define topology_core_cpumask(cpu)		(per_cpu(my_cpu_core_map, cpu))
+#endif
+#else
+static void hack_topology(void) { }
+#endif
+
 /*==========================================================================*/
 #define NIBBLE4(x, s) (((0xffffL << (s*16)) & x) >> s*16)
 #define PR_REG(s, r) #s ": 0x%04lx:%04lx:%04lx:%04lx\n", NIBBLE4((r), 3), NIBBLE4((r), 2), NIBBLE4((r), 1), NIBBLE4((r), 0)
@@ -275,6 +327,13 @@ static int cpumasks_show(struct seq_file *m, void *data)
 	seq_printf(m, "target %*pbl\n", cpumask_pr_args(hdata->target_cpumask));
 	seq_printf(m, "ipi %*pbl\n", cpumask_pr_args(hdata->ipi_cpumask));
 	seq_printf(m, "hack enabled: %d\n", topology_hack_enabled);
+#ifdef HACK_TOPOLOGY
+	for_each_possible_cpu(i) {
+		/* for some reason seq_printf(m, ...) won't print anything when catting the file. */
+		ricardo_printk("topology %d[id:%d] %*pb\n", i, topology_physical_package_id(i), cpumask_pr_args(per_cpu(my_cpu_core_map, i)));
+	}
+#endif
+
 }
 DEFINE_SHOW_ATTRIBUTE(cpumasks);
 
@@ -1055,6 +1114,8 @@ int __init hardlockup_detector_hpet_init(void)
 
 	if (!zalloc_cpumask_var(&hld_data->target_cpumask, GFP_KERNEL))
 		goto err_no_target_cpumask;
+
+	hack_topology();
 
 	v = hpet_readl(HPET_Tn_CFG(hld_data->channel));
 	v |= HPET_TN_32BIT;
