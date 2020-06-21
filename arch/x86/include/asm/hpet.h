@@ -105,10 +105,15 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
  * @irq:			IRQ number assigned to the HPET channel
  * @handling_cpu:		CPU handling the HPET interrupt
  * @msi_msg:			MSI message to be written it the HPET registers
+ * @affinity_work:		Used to update the affinity of the detector
+ *				interrupts, both IPI and NMI.
  * @monitored_cpumask:		CPUs monitored by the hardlockup detector
  * @ipi_cpumask:		Auxiliary mask to handle IPIs. Both sending and
  *				receiving CPUs write to it. Hence, we cannot
  *				reuse @monitored_cpumask.
+ * @target_cpumask:		Subset of @monitored_cpumask receiving a
+ *				particular IPI upon HPET interrupt. It changes
+ *				based on which CPU handles such interrupt.
  */
 struct hpet_hld_data {
 	bool		has_periodic;
@@ -117,8 +122,10 @@ struct hpet_hld_data {
 	int		irq;
 	u32		handling_cpu;
 	struct msi_msg	msi_msg;
+	struct irq_work	affinity_work;
 	cpumask_var_t	monitored_cpumask;
 	cpumask_var_t	ipi_cpumask;
+	cpumask_var_t	target_cpumask;
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void);

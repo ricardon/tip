@@ -158,13 +158,111 @@ static int update_msi_destid(struct hpet_hld_data *hdata)
 }
 
 /**
+ * get_first_cpu_in_next_pkg() - Find the first CPU in the next package
+ * @start_cpu:	CPU from which we start looking
+ * @hdata:	A data structur with the monitored CPUs mask
+ *
+ * Find the first CPU in the tie next to the package of @start_cpu. If
+ * there is only one package in the system, return @start_cpu.
+ */
+static unsigned int get_first_cpu_in_next_pkg(int start_cpu,
+					      struct hpet_hld_data *hdata)
+{
+	u16 this_cpu_pkg_id, next_cpu_pkg_id;
+	int next_cpu = start_cpu;
+
+	if (start_cpu < 0 || start_cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	if (!cpumask_test_cpu(start_cpu, hdata->monitored_cpumask))
+		return -ENODEV;
+
+	this_cpu_pkg_id = topology_physical_package_id(start_cpu);
+	next_cpu_pkg_id = this_cpu_pkg_id;
+
+	/* If there is only one online package, return @start_cpu */
+	while (this_cpu_pkg_id == next_cpu_pkg_id) {
+		next_cpu = cpumask_next_wrap(next_cpu,
+					     hdata->monitored_cpumask,
+					     nr_cpu_ids,
+					     true);
+		/* Wrapped-around */
+		if (next_cpu >= nr_cpu_ids)
+			continue;
+
+		/* Returned to starting point */
+		next_cpu_pkg_id = topology_physical_package_id(next_cpu);
+		if (next_cpu == start_cpu)
+			break;
+	}
+
+	return next_cpu;
+}
+
+/**
+ * update_ipi_target_cpumask() - Update IPI mask for the next HPET interrupt
+ * @hdata:	 Data strucure with the monitored cpumask and handling CPU info
+ *
+ * Update the target_cpumask of @hdata with the set of CPUs to which the
+ * handling_cpu of @hdata will issue an IPI. Normally, the handling_cpu and the
+ * CPUs in the updated target_cpumask are in the same package.
+ *
+ * The target_cpumask start to be updated at the first monitored CPU in the
+ * next package from the handling CPU.
+ */
+static void update_ipi_target_cpumask(struct hpet_hld_data *hdata)
+{
+	int next_cpu, i;
+
+	next_cpu = hld_data->handling_cpu;
+
+	/*
+	 * If we start from an invalid CPU, instead of failing, just use the
+	 * first monitored CPU.
+	 */
+	if (next_cpu < 0 || next_cpu >= nr_cpu_ids)
+		next_cpu = cpumask_first(hdata->monitored_cpumask);
+
+retry:
+	cpumask_clear(hdata->target_cpumask);
+
+	next_cpu = get_first_cpu_in_next_pkg(next_cpu, hdata);
+	if (next_cpu < 0 || next_cpu >= nr_cpu_ids) {
+		/*
+		 * Something went wrong. Restart the cycle with the
+		 * first monitored CPU
+		 */
+		next_cpu = cpumask_first(hdata->monitored_cpumask);
+		goto retry;
+	}
+
+	cpumask_or(hdata->target_cpumask, hdata->target_cpumask,
+		   topology_core_cpumask(next_cpu));
+
+	cpumask_and(hdata->target_cpumask, hdata->target_cpumask,
+		    hdata->monitored_cpumask);
+}
+
+static void update_timer_irq_affinity(struct irq_work *work)
+{
+	struct hpet_hld_data *hdata = container_of(work, struct hpet_hld_data,
+						   affinity_work);
+
+	update_ipi_target_cpumask(hdata);
+
+	hdata->handling_cpu = cpumask_first(hdata->target_cpumask);
+	update_msi_destid(hdata);
+}
+
+/**
  * hardlockup_detector_nmi_handler() - NMI Interrupt handler
  * @type:	Type of NMI handler; not used.
  * @regs:	Register values as seen when the NMI was asserted
  *
  * Check if it was caused by the expiration of the HPET timer. If yes, inspect
  * for lockups by issuing an IPI to all the monitored CPUs. Also, kick the
- * timer if it is non-periodic.
+ * timer if it is non-periodic. Lastly, start IRQ work to update the
+ * target_cpumask
  *
  * Returns:
  * NMI_DONE if the HPET timer did not cause the interrupt. NMI_HANDLED
@@ -183,7 +281,7 @@ static int hardlockup_detector_nmi_handler(unsigned int type,
 		 * Also, target_cpumask will be updated in a workqueue for the
 		 * next NMI IPI.
 		 */
-		cpumask_copy(hld_data->ipi_cpumask, hld_data->monitored_cpumask);
+		cpumask_copy(hld_data->ipi_cpumask, hld_data->target_cpumask);
 		/*
 		 * Even though the NMI IPI will be sent to all CPUs but self,
 		 * clear the CPU to identify a potential unrelated NMI.
@@ -193,6 +291,7 @@ static int hardlockup_detector_nmi_handler(unsigned int type,
 			apic->send_IPI_mask_allbutself(hld_data->ipi_cpumask,
 						       NMI_VECTOR);
 
+		irq_work_queue(&hdata->affinity_work);
 		kick_timer(hdata, !(hdata->has_periodic));
 
 		inspect_for_hardlockups(regs);
@@ -258,6 +357,7 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 				   hardlockup_detector_nmi_handler, 0,
 				   "hpet_hld");
 
+	init_irq_work(&hdata->affinity_work, update_timer_irq_affinity);
 	return ret;
 }
 
@@ -272,6 +372,8 @@ static int setup_hpet_irq(struct hpet_hld_data *hdata)
 void hardlockup_detector_hpet_enable(unsigned int cpu)
 {
 	cpumask_set_cpu(cpu, hld_data->monitored_cpumask);
+
+	update_ipi_target_cpumask(hld_data);
 
 	/*
 	 * If this is the first CPU on which the detector is enabled,
@@ -313,6 +415,9 @@ void hardlockup_detector_hpet_disable(unsigned int cpu)
 
 	hld_data->handling_cpu = cpumask_first(hld_data->monitored_cpumask);
 	update_msi_destid(hld_data);
+
+	update_ipi_target_cpumask(hld_data);
+
 	enable_timer(hld_data);
 }
 
@@ -360,6 +465,9 @@ int __init hardlockup_detector_hpet_init(void)
 	if (!zalloc_cpumask_var(&hld_data->ipi_cpumask, GFP_KERNEL))
 		goto err_no_ipi_cpumask;
 
+	if (!zalloc_cpumask_var(&hld_data->target_cpumask, GFP_KERNEL))
+		goto err_no_target_cpumask;
+
 	v = hpet_readl(HPET_Tn_CFG(hld_data->channel));
 	v |= HPET_TN_32BIT;
 
@@ -367,6 +475,8 @@ int __init hardlockup_detector_hpet_init(void)
 
 	return ret;
 
+err_no_target_cpumask:
+	free_cpumask_var(hld_data->ipi_cpumask);
 err_no_ipi_cpumask:
 	free_cpumask_var(hld_data->monitored_cpumask);
 err_no_monitored_cpumask:
