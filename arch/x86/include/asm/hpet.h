@@ -116,6 +116,7 @@ struct hpet_hld_data {
 	/* CPU handling the HPET interrupt*/
 	u32		handling_cpu;
 	struct msi_msg	msi_msg;
+	struct irq_work	affinity_work;
 	/* CPUs monitored by the hardlockup detector */
 	cpumask_var_t	monitored_cpumask;
 	/*
@@ -123,6 +124,12 @@ struct hpet_hld_data {
 	 * to it. Hence, we cannot reuse @monitored_cpumask.
 	 */
 	cpumask_var_t	ipi_cpumask;
+	/*
+	 * Subset of @monitored_cpumask CPUs receiving a particular IPI
+	 * upon HPET interrupt. It changes based on which CPU handles
+	 * the HPET interrupt.
+	 */
+	cpumask_var_t	target_cpumask;
 };
 
 extern struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void);
