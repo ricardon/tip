@@ -329,14 +329,20 @@ static u32 count_monitored_packages(struct hpet_hld_data *hdata)
 	int c = cpumask_first(hdata->monitored_cpumask);
 	u16 start_id, id;
 	u32 nr_pkgs = 0;
+	u32 safe = 0;
 
 	start_id = topology_physical_package_id(c);
 	id = ~start_id;
 
-	while (start_id != id) {
+	while (start_id != id && safe < 400) {
+		safe++;
 		nr_pkgs++;
 		c = get_first_cpu_in_next_pkg(c, hdata);
 		id = topology_physical_package_id(c);
+		if (safe == 200) {
+			pr_err("BUG! safe reached in %s\n", __func__);
+			break;
+		}
 	}
 
 	return nr_pkgs;
@@ -345,6 +351,7 @@ static u32 count_monitored_packages(struct hpet_hld_data *hdata)
 static void setup_cpu_groups(struct hpet_hld_data *hdata)
 {
 	u32 monitored_pkgs = count_monitored_packages(hdata);
+	int safe = 0;
 
 	hdata->pkgs_per_group = 0;
 	hdata->nr_groups = U32_MAX;
@@ -354,10 +361,13 @@ static void setup_cpu_groups(struct hpet_hld_data *hdata)
 	 * each 1 second or less frequently. Thus, we group together one or more
 	 * packages until we reach such condition.
 	 */
-	while (watchdog_thresh < hdata->nr_groups) {
+	while (watchdog_thresh < hdata->nr_groups && safe < 400) {
 		hdata->pkgs_per_group++;
 		hdata->nr_groups = DIV_ROUND_UP(monitored_pkgs,
 						hdata->pkgs_per_group);
+		safe++;
+		if (safe == 200)
+			pr_err("BUG!! %s safe reached :(\n", __func__);
 	}
 }
 
