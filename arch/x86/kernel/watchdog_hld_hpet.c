@@ -338,13 +338,21 @@ static u32 count_monitored_dies(struct hpet_hld_data *hdata)
 	int c = cpumask_first(hdata->monitored_cpumask);
 	u16 start_id, id;
 	u32 nr_dies = 0;
+	u32 safe = 0;
 
 	start_id = topology_logical_die_id(c);
 	id = ~start_id;
 
-	while (start_id != id) {
+	while (start_id != id && safe < 400) {
+		safe++;
 		nr_dies++;
 		c = get_first_cpu_in_next_die(c, hdata);
+
+		if (safe == 200) {
+			pr_err("BUG! safe reached in %s\n", __func__);
+			break;
+		}
+
 		id = topology_logical_die_id(c);
 	}
 
@@ -354,6 +362,7 @@ static u32 count_monitored_dies(struct hpet_hld_data *hdata)
 static void setup_cpu_groups(struct hpet_hld_data *hdata)
 {
 	u32 monitored_dies = count_monitored_dies(hdata);
+	int safe = 0;
 
 	hdata->dies_per_group = 0;
 	hdata->nr_groups = U32_MAX;
@@ -362,10 +371,14 @@ static void setup_cpu_groups(struct hpet_hld_data *hdata)
 	 * each 1 second or less frequently. Thus, we group together one or more
 	 * dies/packages until we reach such condition.
 	 */
-	while (watchdog_thresh < hdata->nr_groups) {
+	while (watchdog_thresh < hdata->nr_groups && safe < 400) {
 		hdata->dies_per_group++;
 		hdata->nr_groups = DIV_ROUND_UP(monitored_dies,
 						hdata->dies_per_group);
+
+		safe++;
+		if (safe == 200)
+			pr_err("BUG!! %s safe reached :(\n", __func__);
 	}
 }
 
