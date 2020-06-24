@@ -229,6 +229,7 @@ static unsigned int get_first_cpu_in_next_pkg(int start_cpu,
 {
 	u16 this_cpu_pkg_id, next_cpu_pkg_id;
 	int next_cpu = start_cpu;
+	int safe = 0;
 
 	if (start_cpu < 0 || start_cpu >= nr_cpu_ids)
 		return -EINVAL;
@@ -240,7 +241,9 @@ static unsigned int get_first_cpu_in_next_pkg(int start_cpu,
 	next_cpu_pkg_id = this_cpu_pkg_id;
 
 	/* If there is only one online package, return @start_cpu */
-	while (this_cpu_pkg_id == next_cpu_pkg_id) {
+	while (this_cpu_pkg_id == next_cpu_pkg_id && safe < 400) {
+		safe++;
+
 		next_cpu = cpumask_next_wrap(next_cpu,
 					     hdata->monitored_cpumask,
 					     nr_cpu_ids,
@@ -254,6 +257,9 @@ static unsigned int get_first_cpu_in_next_pkg(int start_cpu,
 		if (next_cpu == start_cpu)
 			break;
 	}
+
+	if (safe == 200)
+		pr_err("BUG!! %s safe reached :(\n", __func__);
 
 	return next_cpu;
 }
@@ -272,6 +278,7 @@ static unsigned int get_first_cpu_in_next_pkg(int start_cpu,
 static void update_ipi_target_cpumask(struct hpet_hld_data *hdata)
 {
 	int next_cpu, i;
+	int safe = 0;
 
 	next_cpu = hld_data->handling_cpu;
 
@@ -283,6 +290,12 @@ static void update_ipi_target_cpumask(struct hpet_hld_data *hdata)
 		next_cpu = cpumask_first(hdata->monitored_cpumask);
 
 retry:
+	safe++;
+	if (safe == 100) {
+		pr_err("BUG!! %s safe reached :(\n", __func__);
+		return;
+	}
+
 	cpumask_clear(hdata->target_cpumask);
 
 	for (i = 0 ; i < hdata->pkgs_per_group; i++) {
