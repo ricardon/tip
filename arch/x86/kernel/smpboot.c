@@ -585,6 +585,7 @@ void set_cpu_sibling_map(int cpu)
 		cpumask_set_cpu(cpu, cpu_llc_shared_mask(cpu));
 		cpumask_set_cpu(cpu, topology_core_cpumask(cpu));
 		cpumask_set_cpu(cpu, topology_die_cpumask(cpu));
+		ricardo_printk(KERN_ERR "added2 CPU %d from die_cpumask: %*pbl\n", cpu, cpumask_pr_args(topology_die_cpumask(cpu)));
 		c->booted_cores = 1;
 		return;
 	}
@@ -634,8 +635,10 @@ void set_cpu_sibling_map(int cpu)
 		if (match_pkg(c, o) && !topology_same_node(c, o))
 			x86_has_numa_in_package = true;
 
-		if ((i == cpu) || (has_mp && match_die(c, o)))
+		if ((i == cpu) || (has_mp && match_die(c, o))) {
 			link_mask(topology_die_cpumask, cpu, i);
+			ricardo_printk(KERN_ERR "added3 CPU %d : %*pbl %*pbl\n", cpu, cpumask_pr_args(topology_die_cpumask(cpu)), cpumask_pr_args(topology_die_cpumask(i)));
+		}
 	}
 
 	threads = cpumask_weight(topology_sibling_cpumask(cpu));
@@ -1235,6 +1238,7 @@ static __init void disable_smp(void)
 	cpumask_set_cpu(0, topology_sibling_cpumask(0));
 	cpumask_set_cpu(0, topology_core_cpumask(0));
 	cpumask_set_cpu(0, topology_die_cpumask(0));
+	ricardo_printk(KERN_ERR "added1 CPU %d from die_cpumask: %*pbl\n", 0, cpumask_pr_args(topology_die_cpumask(0)));
 }
 
 /*
@@ -1560,6 +1564,7 @@ static void remove_siblinginfo(int cpu)
 	cpumask_clear(topology_sibling_cpumask(cpu));
 	cpumask_clear(topology_core_cpumask(cpu));
 	cpumask_clear(topology_die_cpumask(cpu));
+	ricardo_printk(KERN_ERR "removed CPU %d from die_cpumask: %*pbl\n", cpu, cpumask_pr_args(topology_die_cpumask(cpu)));
 	c->cpu_core_id = 0;
 	c->booted_cores = 0;
 	cpumask_clear_cpu(cpu, cpu_sibling_setup_mask);

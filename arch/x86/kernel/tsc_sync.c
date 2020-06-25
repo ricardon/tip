@@ -15,6 +15,7 @@
  * ( The serial nature of the boot logic and the CPU hotplug lock
  *   protects against more than 2 CPUs entering this code. )
  */
+#define DEBUG
 #include <linux/topology.h>
 #include <linux/spinlock.h>
 #include <linux/kernel.h>
