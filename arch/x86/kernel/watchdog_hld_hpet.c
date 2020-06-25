@@ -229,24 +229,72 @@ static void update_ipi_target_cpumask(struct hpet_hld_data *hdata)
 	if (next_cpu < 0 || next_cpu >= nr_cpu_ids)
 		next_cpu = cpumask_first(hdata->monitored_cpumask);
 
+	if (hdata->dies_per_group < 1)
+		return;
+
 retry:
 	cpumask_clear(hdata->target_cpumask);
 
-	next_cpu = get_first_cpu_in_next_die(next_cpu, hdata);
-	if (next_cpu < 0 || next_cpu >= nr_cpu_ids) {
-		/*
-		 * Something went wrong. Restart the cycle with the
-		 * first monitored CPU
-		 */
-		next_cpu = cpumask_first(hdata->monitored_cpumask);
-		goto retry;
-	}
+	for (i = 0 ; i < hdata->dies_per_group; i++) {
+		next_cpu = get_first_cpu_in_next_die(next_cpu, hdata);
+		if (next_cpu < 0 || next_cpu >= nr_cpu_ids) {
+			/*
+			 * Something went wrong. Restart the cycle with the
+			 * first monitored CPU
+			 */
+			next_cpu = cpumask_first(hdata->monitored_cpumask);
+			goto retry;
+		}
 
-	cpumask_or(hdata->target_cpumask, hdata->target_cpumask,
-		   topology_die_cpumask(next_cpu));
+		cpumask_or(hdata->target_cpumask, hdata->target_cpumask,
+			   topology_die_cpumask(next_cpu));
+	}
 
 	cpumask_and(hdata->target_cpumask, hdata->target_cpumask,
 		    hdata->monitored_cpumask);
+}
+
+/**
+ * count_monitored_dies() - Count the number of dies with monitored CPUs
+ * @hdata:	A data structure with the monitored cpumask
+ *
+ * Return the number of dies with at least one CPU in the monitored_cpumask
+ * of @hdata
+ */
+static u32 count_monitored_dies(struct hpet_hld_data *hdata)
+{
+	int c = cpumask_first(hdata->monitored_cpumask);
+	u16 start_id, id;
+	u32 nr_dies = 0;
+
+	start_id = topology_logical_die_id(c);
+	id = ~start_id;
+
+	while (start_id != id) {
+		nr_dies++;
+		c = get_first_cpu_in_next_die(c, hdata);
+		id = topology_logical_die_id(c);
+	}
+
+	return nr_dies;
+}
+
+static void setup_cpu_groups(struct hpet_hld_data *hdata)
+{
+	u32 monitored_dies = count_monitored_dies(hdata);
+
+	hdata->dies_per_group = 0;
+	hdata->nr_groups = U32_MAX;
+
+	/* We need watchdog_thresh >= nr_groups to keep the HPET timer to fire
+	 * each 1 second or less frequently. Thus, we group together one or more
+	 * dies/packages until we reach such condition.
+	 */
+	while (watchdog_thresh < hdata->nr_groups) {
+		hdata->dies_per_group++;
+		hdata->nr_groups = DIV_ROUND_UP(monitored_dies,
+						hdata->dies_per_group);
+	}
 }
 
 static void update_timer_irq_affinity(struct irq_work *work)
@@ -379,6 +427,8 @@ void hardlockup_detector_hpet_enable(unsigned int cpu)
 {
 	cpumask_set_cpu(cpu, hld_data->monitored_cpumask);
 
+	setup_cpu_groups(hld_data);
+
 	update_ipi_target_cpumask(hld_data);
 
 	/*
@@ -414,6 +464,8 @@ void hardlockup_detector_hpet_disable(unsigned int cpu)
 
 	hld_data->handling_cpu = cpumask_first(hld_data->monitored_cpumask);
 	update_msi_destid(hld_data);
+
+	setup_cpu_groups(hld_data);
 
 	update_ipi_target_cpumask(hld_data);
 }
