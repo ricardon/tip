@@ -427,6 +427,7 @@ static void init_translation_status(struct intel_iommu *iommu)
 
 static int __init intel_iommu_setup(char *str)
 {
+	printk(KERN_ERR "==== %s %s\n", __func__, str);
 	if (!str)
 		return -EINVAL;
 	while (*str) {

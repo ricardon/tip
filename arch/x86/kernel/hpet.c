@@ -79,6 +79,11 @@ inline unsigned int hpet_readl(unsigned int a)
 	return readl(hpet_virt_address + a);
 }
 
+inline unsigned long hpet_readq(unsigned int a)
+{
+	return readq(hpet_virt_address + a);
+}
+
 inline void hpet_writel(unsigned int d, unsigned int a)
 {
 	writel(d, hpet_virt_address + a);
@@ -212,32 +217,49 @@ struct hpet_hld_data *hpet_hardlockup_detector_get_timer(void)
 		}
 	}
 
+	ricardo_printk("channel will be %d\n", i);
 	if (hc->mode != HPET_MODE_NMI_WATCHDOG)
 		return NULL;
 
-	if (!(hc->boot_cfg & HPET_TN_FSB_CAP))
+	ricardo_printk("will check timer boot_cfg [0x%x]", hc->boot_cfg);
+	if (!(hc->boot_cfg & HPET_TN_FSB_CAP)) {
+		ricardo_printk("NO, no FSP");
 		goto err_no_fsb;
+	}
 
 	hld_data = kzalloc(sizeof(*hld_data), GFP_KERNEL);
 	if (!hld_data)
 		goto err_nomem;
 
-	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP)
+	ricardo_printk("YES, FSP");
+
+	if (hc->boot_cfg & HPET_TN_PERIODIC_CAP) {
+		ricardo_printk("YES periodic");
 		hld_data->has_periodic = true;
+	} else {
+		ricardo_printk("NO no periodic");
+	}
 
 	hld_data->channel = i;
 	hld_data->ticks_per_second = hpet_freq;
 
-	if (!hpet_domain)
+	if (!hpet_domain) {
+		printk(KERN_ERR "no HPET MSI domain, create it\n");
 		hpet_domain = hpet_create_irq_domain(hpet_blockid);
+	}
 
-	if (!hpet_domain)
+	if (!hpet_domain) {
+		printk(KERN_ERR "failed to create HPET MSI domain!\n");
 		goto err_no_irq_dom;
+	}
 
 	irq = hpet_assign_irq(hpet_domain, hc, hc->num);
-	if (irq <= 0)
+	if (irq <= 0) {
+		ricardo_printk("NO INTERRUPT FOUND!\n");
 		goto err_no_irq;
+	}
 
+	ricardo_printk(KERN_ERR "YES, able to assign irq %d\n", irq);
 	hc->irq = irq;
 	hld_data->irq = irq;
 	return hld_data;
@@ -272,16 +294,22 @@ bool hpet_hardlockup_detector_hpet_is_irq(struct irq_alloc_info *info)
 	if (!info)
 		return false;
 
+	ricardo_printk("Will investigate irq_alloc_info\n");
 	if (info->type != X86_IRQ_ALLOC_TYPE_HPET)
 		return false;
 
+	ricardo_printk("Yes, the info type is HPET");
 	hc = info->hpet_data;
 	if (!hc)
 		return false;
 
-	if (hc->mode == HPET_MODE_NMI_WATCHDOG)
+	ricardo_printk("Yes, it has HPET data");
+	if (hc->mode == HPET_MODE_NMI_WATCHDOG) {
+		ricardo_printk("Yes, it has HPET HLD");
 		return true;
+	}
 
+	ricardo_printk("No, not HPET IRQ info\n");
 	return false;
 }
 #endif /* CONFIG_X86_HARDLOCKUP_DETECTOR_HPET */
@@ -1121,6 +1149,7 @@ int __init hpet_enable(void)
 
 		cfg = hpet_readl(HPET_Tn_CFG(i));
 		hc->boot_cfg = cfg;
+		ricardo_printk("HPET channel %d boot_cfg[%08x]\n", i, cfg);
 		irq = (cfg & Tn_INT_ROUTE_CNF_MASK) >> Tn_INT_ROUTE_CNF_SHIFT;
 		hc->irq = irq;
 
