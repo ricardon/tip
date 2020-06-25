@@ -101,6 +101,7 @@ void inspect_for_hardlockups(struct pt_regs *regs)
 		return;
 	}
 
+	ricardo_printk("look for lockups %d\n", smp_processor_id());
 	if (!watchdog_check_timestamp())
 		return;
 

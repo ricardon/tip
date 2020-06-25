@@ -20,6 +20,8 @@ int watchdog_nmi_enable(unsigned int cpu)
 {
 	int ret = 0;
 
+	ricardo_printk("######### %d\n", smp_processor_id());
+
 	switch (detector_type) {
 	case X86_HARDLOCKUP_DETECTOR_PERF:
 		hardlockup_detector_perf_enable();
@@ -36,6 +38,8 @@ int watchdog_nmi_enable(unsigned int cpu)
 
 void watchdog_nmi_disable(unsigned int cpu)
 {
+	ricardo_printk(KERN_ERR"########## %d", smp_processor_id());
+
 	switch (detector_type) {
 	case X86_HARDLOCKUP_DETECTOR_PERF:
 		hardlockup_detector_perf_disable();
@@ -57,7 +61,9 @@ int __init watchdog_nmi_probe(void)
 	 * perf-based detector is used by default, if selected at
 	 * build time.
 	 */
+	ricardo_printk("%d will check hlds\n", smp_processor_id());
 	ret = hardlockup_detector_hpet_init();
+	ricardo_printk("%d for hpet %d\n", smp_processor_id(), ret);
 	if (!ret) {
 		detector_type = X86_HARDLOCKUP_DETECTOR_HPET;
 		return ret;
