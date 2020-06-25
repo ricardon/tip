@@ -104,6 +104,10 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
  * @ticks_per_second:		Frequency of the HPET timer
  * @irq:			IRQ number assigned to the HPET channel
  * @handling_cpu:		CPU handling the HPET interrupt
+ * @pkgs_per_group:		Number of physical packages in a group of CPUs
+ *				receiving an IPI
+ * @nr_groups:			Number of groups into which @monitored_cpumask
+ *				is partitioned
  * @msi_msg:			MSI message to be written it the HPET registers
  * @affinity_work:		Used to update the affinity of the detector
  *				interrupts, both IPI and NMI.
@@ -121,6 +125,8 @@ struct hpet_hld_data {
 	u64		ticks_per_second;
 	int		irq;
 	u32		handling_cpu;
+	u32		pkgs_per_group;
+	u32		nr_groups;
 	struct msi_msg	msi_msg;
 	struct irq_work	affinity_work;
 	cpumask_var_t	monitored_cpumask;
