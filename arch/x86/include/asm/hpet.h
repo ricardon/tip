@@ -115,6 +115,8 @@ struct hpet_hld_data {
 	int		irq;
 	/* CPU handling the HPET interrupt*/
 	u32		handling_cpu;
+	u32		pkgs_per_group;
+	u32		nr_groups;
 	struct msi_msg	msi_msg;
 	struct irq_work	affinity_work;
 	/* CPUs monitored by the hardlockup detector */
