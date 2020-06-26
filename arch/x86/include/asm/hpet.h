@@ -113,6 +113,8 @@ struct hpet_hld_data {
 	u32		channel;
 	u64		ticks_per_second;
 	u64		ticks_per_group;
+	u64		tsc_next;
+	u64		tsc_ticks_per_group;
 	int		irq;
 	/* CPU handling the HPET interrupt*/
 	u32		handling_cpu;
