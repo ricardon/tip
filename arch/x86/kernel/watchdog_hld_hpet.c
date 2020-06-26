@@ -12,6 +12,11 @@
  * (offline CPUs also get the NMI but they "ignore" it). A cpumask is used to
  * specify whether a CPU must check for hardlockups.
  *
+ * It is not possible to determine the source of an NMI. Instead, we calculate
+ * the value that the TSC counter should have when the next HPET NMI occurs. If
+ * it has the calculated value +/- 0.4%, we conclude that the HPET channel is the
+ * source of the NMI.
+ *
  * The NMI also disturbs isolated CPUs. The detector fails to initialize if
  * tick_nohz_full is enabled.
  */
@@ -34,6 +39,7 @@
 #include "apic/local.h"
 
 static struct hpet_hld_data *hld_data;
+static u64 tsc_next_error;
 
 static void __init setup_hpet_channel(struct hpet_hld_data *hdata)
 {
@@ -65,12 +71,39 @@ static void __init setup_hpet_channel(struct hpet_hld_data *hdata)
  * Reprogram the timer to expire in watchdog_thresh seconds in the future.
  * If the timer supports periodic mode, it is not kicked unless @force is
  * true.
+ *
+ * Also, compute the expected value of the time-stamp counter at the time of
+ * expiration as well as a deviation from the expected value.
  */
 static void kick_timer(struct hpet_hld_data *hdata, bool force)
 {
-	u64 new_compare, count, period = 0;
+	u64 tsc_curr, tsc_delta, new_compare, count, period = 0;
 
-	/* Kick the timer only when needed. */
+	tsc_curr = rdtsc();
+
+	/*
+	 * Compute the delta between the value of the TSC now and the value
+	 * it will have the next time the HPET channel fires.
+	 */
+	tsc_delta = watchdog_thresh * tsc_khz * 1000L;
+	hdata->tsc_next = tsc_curr + tsc_delta;
+
+	/*
+	 * Define an error window between the expected TSC value and the actual
+	 * value it will have the next time the HPET channel fires. Define this
+	 * error as percentage of tsc_delta.
+	 *
+	 * The systems that have been tested so far exhibit an error of 0.05%
+	 * of the expected TSC value once the system is up and running. Systems
+	 * that refine tsc_khz exhibit a larger initial error up to 0.2%. To be
+	 * safe, allow a maximum error of ~0.4% (i.e., tsc_delta / 256).
+	 */
+	tsc_next_error = tsc_delta >> 8;
+
+	/*
+	 * We must compute the exptected TSC value always. Kick the timer only
+	 * when needed.
+	 */
 	if (!force && hdata->has_periodic)
 		return;
 
@@ -133,12 +166,31 @@ static void enable_timer(struct hpet_hld_data *hdata)
  * is_hpet_hld_interrupt() - Check if the HPET channel caused the interrupt
  * @hdata:	A data structure describing the HPET channel
  *
+ * Determining the sources of NMIs is not possible. Furthermore, we have
+ * programmed the HPET channel for MSI delivery, which does not have a
+ * status bit. Also, reading HPET registers is slow.
+ *
+ * Instead, we just assume that an NMI delivered within a time window
+ * of when the HPET was expected to fire probably came from the HPET.
+ *
+ * The window is estimated using the TSC counter. Check the comments in
+ * kick_timer() for details on the size of the time window.
+ *
  * Returns:
  * True if the HPET watchdog timer caused the interrupt. False otherwise.
  */
 static bool is_hpet_hld_interrupt(struct hpet_hld_data *hdata)
 {
-	return false;
+	u64 tsc_curr, tsc_curr_min, tsc_curr_max;
+
+	if (smp_processor_id() != hdata->handling_cpu)
+		return false;
+
+	tsc_curr = rdtsc();
+	tsc_curr_min = tsc_curr - tsc_next_error;
+	tsc_curr_max = tsc_curr + tsc_next_error;
+
+	return time_in_range64(hdata->tsc_next, tsc_curr_min, tsc_curr_max);
 }
 
 /**
