@@ -104,6 +104,10 @@ extern void hpet_unregister_irq_handler(rtc_irq_handler handler);
  * @ticks_per_second:		Frequency of the HPET timer
  * @ticks_per_group:		HPET ticks per group that must elapse before
  *				the timer expires
+ * @tsc_next:			Estimated value of the TSC at the next
+ *				HPET timer interrupt
+ * @tsc_ticks_per_group:	TSC ticks that must elapse for each group of
+ *				monitored CPUs.
  * @irq:			IRQ number assigned to the HPET channel
  * @handling_cpu:		CPU handling the HPET interrupt
  * @pkgs_per_group:		Number of physical packages in a group of CPUs
@@ -126,6 +130,8 @@ struct hpet_hld_data {
 	u32		channel;
 	u64		ticks_per_second;
 	u64		ticks_per_group;
+	u64		tsc_next;
+	u64		tsc_ticks_per_group;
 	int		irq;
 	u32		handling_cpu;
 	u32		pkgs_per_group;
