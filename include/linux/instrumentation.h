@@ -6,7 +6,7 @@
 
 /* Begin/end of an instrumentation safe region */
 #define instrumentation_begin() ({					\
-	asm volatile("%c0:\n\t"						\
+	asm volatile("%c0: nop\n\t"						\
 		     ".pushsection .discard.instr_begin\n\t"		\
 		     ".long %c0b - .\n\t"				\
 		     ".popsection\n\t" : : "i" (__COUNTER__));		\
