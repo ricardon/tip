@@ -35,6 +35,7 @@
 #include <asm/irq_remapping.h>
 #include <asm/io_apic.h>
 #include <asm/apic.h>
+#include <asm/hpet.h>
 #include <asm/hw_irq.h>
 #include <asm/proto.h>
 #include <asm/iommu.h>
@@ -3254,6 +3255,14 @@ static int irq_remapping_alloc(struct irq_domain *domain, unsigned int virq,
 		irq_data->hwirq = (devid << 16) + i;
 		irq_data->chip_data = data;
 		irq_data->chip = &amd_ir_chip;
+
+		/*
+		 * If we find the HPET hardlockup detector irq, fixup the
+		 * delivery mode.
+		 */
+		if (is_hpet_irq_hardlockup_detector(info))
+			cfg->delivery_mode = APIC_DELIVERY_MODE_NMI;
+
 		irq_remapping_prepare_irte(data, cfg, info, devid, index, i);
 		irq_set_status_flags(virq + i, IRQ_MOVE_PCNTXT);
 	}
