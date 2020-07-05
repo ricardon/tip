@@ -18,6 +18,7 @@
 #include <asm/apic.h>
 #include <asm/smp.h>
 #include <asm/cpu.h>
+#include <asm/hpet.h>
 #include <asm/irq_remapping.h>
 #include <asm/pci-direct.h>
 
@@ -1372,6 +1373,14 @@ static int intel_irq_remapping_alloc(struct irq_domain *domain,
 		irq_data->hwirq = (index << 16) + i;
 		irq_data->chip_data = ird;
 		irq_data->chip = &intel_ir_chip;
+
+		/*
+		 * If we find the HPET hardlockup detector irq, fixup the
+		 * delivery mode.
+		 */
+		if (hpet_hardlockup_detector_hpet_is_irq(info))
+			irq_cfg->delivery_mode = APIC_DELIVERY_MODE_NMI;
+
 		intel_irq_remapping_prepare_irte(ird, irq_cfg, info, index, i);
 		irq_set_status_flags(virq + i, IRQ_MOVE_PCNTXT);
 	}
