@@ -419,10 +419,11 @@ struct pmu {
 	 */
 	void (*sched_task)		(struct perf_event_context *ctx,
 					bool sched_in);
+
 	/*
-	 * PMU specific data size
+	 * Kmem cache of PMU specific data
 	 */
-	size_t				task_ctx_size;
+	struct kmem_cache		*task_ctx_cache;
 
 	/*
 	 * PMU specific parts of task perf event context (i.e. ctx->task_ctx_data)

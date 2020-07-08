@@ -358,6 +358,7 @@ void x86_release_hardware(void)
 	if (atomic_dec_and_mutex_lock(&pmc_refcount, &pmc_reserve_mutex)) {
 		release_pmc_hardware();
 		release_ds_buffers();
+		release_lbr_buffers();
 		mutex_unlock(&pmc_reserve_mutex);
 	}
 }
@@ -2371,7 +2372,6 @@ static struct pmu pmu = {
 
 	.event_idx		= x86_pmu_event_idx,
 	.sched_task		= x86_pmu_sched_task,
-	.task_ctx_size          = sizeof(struct x86_perf_task_context),
 	.swap_task_ctx		= x86_pmu_swap_task_ctx,
 	.check_period		= x86_pmu_check_period,
 

@@ -1238,12 +1238,26 @@ static void get_ctx(struct perf_event_context *ctx)
 	refcount_inc(&ctx->refcount);
 }
 
+static void *alloc_task_ctx_data(struct pmu *pmu)
+{
+	if (pmu->task_ctx_cache)
+		return kmem_cache_zalloc(pmu->task_ctx_cache, GFP_KERNEL);
+
+	return NULL;
+}
+
+static void free_task_ctx_data(struct pmu *pmu, void *task_ctx_data)
+{
+	if (pmu->task_ctx_cache && task_ctx_data)
+		kmem_cache_free(pmu->task_ctx_cache, task_ctx_data);
+}
+
 static void free_ctx(struct rcu_head *head)
 {
 	struct perf_event_context *ctx;
 
 	ctx = container_of(head, struct perf_event_context, rcu_head);
-	kfree(ctx->task_ctx_data);
+	free_task_ctx_data(ctx->pmu, ctx->task_ctx_data);
 	kfree(ctx);
 }
 
@@ -4471,7 +4485,7 @@ find_get_context(struct pmu *pmu, struct task_struct *task,
 		goto errout;
 
 	if (event->attach_state & PERF_ATTACH_TASK_DATA) {
-		task_ctx_data = kzalloc(pmu->task_ctx_size, GFP_KERNEL);
+		task_ctx_data = alloc_task_ctx_data(pmu);
 		if (!task_ctx_data) {
 			err = -ENOMEM;
 			goto errout;
@@ -4529,11 +4543,11 @@ retry:
 		}
 	}
 
-	kfree(task_ctx_data);
+	free_task_ctx_data(pmu, task_ctx_data);
 	return ctx;
 
 errout:
-	kfree(task_ctx_data);
+	free_task_ctx_data(pmu, task_ctx_data);
 	return ERR_PTR(err);
 }
 
@@ -12497,8 +12511,7 @@ inherit_event(struct perf_event *parent_event,
 	    !child_ctx->task_ctx_data) {
 		struct pmu *pmu = child_event->pmu;
 
-		child_ctx->task_ctx_data = kzalloc(pmu->task_ctx_size,
-						   GFP_KERNEL);
+		child_ctx->task_ctx_data = alloc_task_ctx_data(pmu);
 		if (!child_ctx->task_ctx_data) {
 			free_event(child_event);
 			return ERR_PTR(-ENOMEM);
