@@ -1,0 +1,65 @@
+x86: watchdog/hardlockup/hpet: Add support for interrupt remapping
+
+Hi IOMMU experts,
+
+I proposed a hardlockup detector driven by the HPET timer [1]. Such
+detector is driven by a single timer. The hardlockup detector brings the
+extra complexity of having to update the affinity of the interrupt
+periodically and initiated from NMI context. The proposed design only
+requires updating the affinity every watchdog_thresh (the interval is
+between [1, 60] seconds). Also, the affinity update is offloaded to
+an irq_work. Handling the HPET interrupt affinity is trivial with
+!intremap since the detector composes the MSI message and writes it
+directly to the HPET registers.
+
+However, for intremap we must use the existing IOMMU drivers as well as
+the kernel's irq plumbing. Thomas Gleixner has imposed two restrictions:
+  1) Do not implement an IRQF_NMI flag for x86 as it is not possible to
+     determine the source of an NMI [2].
+  2) Use the irq subsystem to update the affinity of the HPET
+     interrupt [3].
+
+1) implies that the interrupt remapping drivers need to implement a quirk
+to identify the HPET interrupt and update its delivery mode to NMI. 2)
+means that the hardlockup detector must use request_irq() to allocate the
+HPET interrupt.
+
+This patch series attempts to meet the requirements above by
+  a) Decoupling the delivery mode of an APIC interrupt from the delivery
+     mode of the APIC driver (patch 1)
+  b) Implement quirks in the Intel and AMD IOMMU drivers to identify the
+     HPET timer and update the delivery mode accordingly (patches 2-5).
+  c) Add support for interrupt remapping in the HPET hardlockup detector
+     in [1]. This includes the unavoidable eyesore of using request_irq()
+     and having a useless regular interrupt handler (patch 6).
+
+I would like to get your feedback on whether the HPET NMI quirk looks
+sane to you and whether offloading the affinity setup to an irq_work
+could pose issues.
+
+Thanks and BR,
+Ricardo
+
+[1]. https://lore.kernel.org/lkml/20210504190526.22347-1-ricardo.neri-calderon@linux.intel.com/T/#mf77988cc98f9ca6988831e17f68394577388959d
+[2]. https://lore.kernel.org/lkml/alpine.DEB.2.21.1808021137400.2037@nanos.tec.linutronix.de/
+[3]. https://lore.kernel.org/lkml/alpine.DEB.2.21.1906161042080.1760@nanos.tec.linutronix.de/
+
+Changes since v4:
+ * With !CONFIG_IRQ_REMAP [1] now disables the HPET channel before changing
+   the MSI Destination ID field. This should avoid races between a pending
+   interrupt and updating the detector's interrupt affinity. (Ashok)
+ * Rebased to use new enumeration apic_delivery_modes.
+ * Removed custom functions to allocate an interrupt for the detector
+   and instead added support to identify the detector's interrupt and
+   change the delivery mode.
+ * With interrupt remapping enabled, use request_irq().
+ * Added support for AMD IOMMU.
+
+Changes since v3:
+ * None
+
+Changes since v2:
+ * None
+
+Changes since v1:
+ * Introduced support for interrupt remapping
