@@ -335,13 +335,14 @@ static int cpumasks_show(struct seq_file *m, void *data)
 }
 DEFINE_SHOW_ATTRIBUTE(cpumasks);
 
-void __init debugfs_init(struct hpet_hld_data *hdata)
+void __init hpet_hld_debugfs_init(struct hpet_hld_data *hdata)
 {
 	struct dentry *hpet_debug_root;
 	unsigned long val;
 	unsigned int i, timers;
 
 	hpet_debug_root = debugfs_create_dir("hpet_wdt", NULL);
+	ricardo_printk("here hpet_debug_root=%lx\n", hpet_debug_root);
 	if (!hpet_debug_root)
 		return;
 
@@ -387,6 +388,7 @@ void __init debugfs_init(struct hpet_hld_data *hdata)
 				    priv, &regset_dump_fops);
 	}
 }
+postcore_initcall(hpet_hld_debugfs_init)
 
 /*==========================================================================*/
 
@@ -1119,8 +1121,6 @@ int __init hardlockup_detector_hpet_init(void)
 	hpet_writel(v, HPET_Tn_CFG(hld_data->channel));
 
 	ricardo_printk("here\n");
-
-	debugfs_init(hld_data);
 
 	return ret;
 
