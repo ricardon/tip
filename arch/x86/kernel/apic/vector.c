@@ -570,6 +570,10 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 	if ((info->flags & X86_IRQ_ALLOC_CONTIGUOUS_VECTORS) && nr_irqs > 1)
 		return -ENOSYS;
 
+	/* Only one IRQ per NMI */
+	if ((info->flags & X86_IRQ_ALLOC_AS_NMI) && nr_irqs != 1)
+		return -EINVAL;
+
 	/*
 	 * Catch any attempt to touch the cascade interrupt on a PIC
 	 * equipped system.
@@ -610,7 +614,15 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 		 * default delivery mode of the APIC. Children irq domains
 		 * may take the delivery mode from the individual irq
 		 * configuration rather than from the APIC driver.
+		 *
+		 * Vectors are meaningless if the delivery mode is NMI. Since
+		 * nr_irqs is 1, we can return.
 		 */
+		if (info->flags & X86_IRQ_ALLOC_AS_NMI) {
+			apicd->hw_irq_cfg.delivery_mode = APIC_DELIVERY_MODE_NMI;
+			return 0;
+		}
+
 		apicd->hw_irq_cfg.delivery_mode = apic->delivery_mode;
 
 		/*
