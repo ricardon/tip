@@ -125,9 +125,16 @@ static unsigned int matrix_alloc_area(struct irq_matrix *m, struct cpumap *cm,
 	return area;
 }
 
-/* Find the best CPU which has the lowest vector allocation count */
-static unsigned int matrix_find_best_cpu(struct irq_matrix *m,
-					const struct cpumask *msk)
+/**
+ * irq_matrix_find_best_cpu() - Find the best CPU for an IRQ
+ * @m:		Matrix pointer
+ * @msk:	On which CPUs the search will be performed
+ *
+ * Find the best CPU which has the lowest vector allocation count
+ * Returns: The best CPU to use
+ */
+unsigned int irq_matrix_find_best_cpu(struct irq_matrix *m,
+				      const struct cpumask *msk)
 {
 	unsigned int cpu, best_cpu, maxavl = 0;
 	struct cpumap *cm;
@@ -146,9 +153,16 @@ static unsigned int matrix_find_best_cpu(struct irq_matrix *m,
 	return best_cpu;
 }
 
-/* Find the best CPU which has the lowest number of managed IRQs allocated */
-static unsigned int matrix_find_best_cpu_managed(struct irq_matrix *m,
-						const struct cpumask *msk)
+/**
+ * irq_matrix_find_best_cpu_managed() - Find the best CPU for a managed IRQ
+ * @m:		Matrix pointer
+ * @msk:	On which CPUs the search will be performed
+ *
+ * Find the best CPU which has the lowest number of managed IRQs allocated
+ * Returns: The best CPU to use
+ */
+unsigned int irq_matrix_find_best_cpu_managed(struct irq_matrix *m,
+					      const struct cpumask *msk)
 {
 	unsigned int cpu, best_cpu, allocated = UINT_MAX;
 	struct cpumap *cm;
@@ -292,7 +306,7 @@ int irq_matrix_alloc_managed(struct irq_matrix *m, const struct cpumask *msk,
 	if (cpumask_empty(msk))
 		return -EINVAL;
 
-	cpu = matrix_find_best_cpu_managed(m, msk);
+	cpu = irq_matrix_find_best_cpu_managed(m, msk);
 	if (cpu == UINT_MAX)
 		return -ENOSPC;
 
@@ -381,13 +395,13 @@ int irq_matrix_alloc(struct irq_matrix *m, const struct cpumask *msk,
 	struct cpumap *cm;
 
 	/*
-	 * Not required in theory, but matrix_find_best_cpu() uses
+	 * Not required in theory, but irq_matrix_find_best_cpu() uses
 	 * for_each_cpu() which ignores the cpumask on UP .
 	 */
 	if (cpumask_empty(msk))
 		return -EINVAL;
 
-	cpu = matrix_find_best_cpu(m, msk);
+	cpu = irq_matrix_find_best_cpu(m, msk);
 	if (cpu == UINT_MAX)
 		return -ENOSPC;
 
