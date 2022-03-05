@@ -245,11 +245,20 @@ assign_vector_locked(struct irq_data *irqd, const struct cpumask *dest)
 	if (apicd->move_in_progress || !hlist_unhashed(&apicd->clist))
 		return -EBUSY;
 
+	if (apicd->hw_irq_cfg.delivery_mode == APIC_DELIVERY_MODE_NMI) {
+		cpu = irq_matrix_find_best_cpu(vector_matrix, dest);
+		apicd->cpu = cpu;
+		vector = 0;
+		goto no_vector;
+	}
+
 	vector = irq_matrix_alloc(vector_matrix, dest, resvd, &cpu);
 	trace_vector_alloc(irqd->irq, vector, resvd, vector);
 	if (vector < 0)
 		return vector;
 	apic_update_vector(irqd, vector, cpu);
+
+no_vector:
 	apic_update_irq_cfg(irqd, vector, cpu);
 
 	return 0;
@@ -321,12 +330,22 @@ assign_managed_vector(struct irq_data *irqd, const struct cpumask *dest)
 	/* set_affinity might call here for nothing */
 	if (apicd->vector && cpumask_test_cpu(apicd->cpu, vector_searchmask))
 		return 0;
+
+	if (apicd->hw_irq_cfg.delivery_mode == APIC_DELIVERY_MODE_NMI) {
+		cpu = irq_matrix_find_best_cpu_managed(vector_matrix, dest);
+		apicd->cpu = cpu;
+		vector = 0;
+		goto no_vector;
+	}
+
 	vector = irq_matrix_alloc_managed(vector_matrix, vector_searchmask,
 					  &cpu);
 	trace_vector_alloc_managed(irqd->irq, vector, vector);
 	if (vector < 0)
 		return vector;
 	apic_update_vector(irqd, vector, cpu);
+
+no_vector:
 	apic_update_irq_cfg(irqd, vector, cpu);
 	return 0;
 }
@@ -374,6 +393,10 @@ static void x86_vector_deactivate(struct irq_domain *dom, struct irq_data *irqd)
 		return;
 	/* If the interrupt has a global reservation, nothing to do */
 	if (apicd->has_reserved)
+		return;
+
+	/* NMI IRQs do not have associated vectors; nothing to do. */
+	if (apicd->hw_irq_cfg.delivery_mode == APIC_DELIVERY_MODE_NMI)
 		return;
 
 	raw_spin_lock_irqsave(&vector_lock, flags);
@@ -471,6 +494,10 @@ static void vector_free_reserved_and_managed(struct irq_data *irqd)
 
 	trace_vector_teardown(irqd->irq, apicd->is_managed,
 			      apicd->has_reserved);
+
+	/* NMI IRQs do not have associated vectors; nothing to do. */
+	if (apicd->hw_irq_cfg.delivery_mode == APIC_DELIVERY_MODE_NMI)
+		return;
 
 	if (apicd->has_reserved)
 		irq_matrix_remove_reserved(vector_matrix);
