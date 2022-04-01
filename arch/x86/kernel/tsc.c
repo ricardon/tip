@@ -1386,6 +1386,12 @@ restart:
 	/* Inform the TSC deadline clockevent devices about the recalibration */
 	lapic_update_tsc_freq();
 
+	/*
+	 * If in use, the HPET hardlockup detector relies on tsc_khz.
+	 * Reconfigure it to make use of the refined tsc_khz.
+	 */
+	lockup_detector_reconfigure();
+
 	/* Update the sched_clock() rate to match the clocksource one */
 	for_each_possible_cpu(cpu)
 		set_cyc2ns_scale(tsc_khz, cpu, tsc_stop);
