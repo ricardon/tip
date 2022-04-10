@@ -3156,6 +3156,15 @@ static int irq_remapping_alloc(struct irq_domain *domain, unsigned int virq,
 	    info->type != X86_IRQ_ALLOC_TYPE_PCI_MSIX)
 		return -EINVAL;
 
+	if (info->flags & X86_IRQ_ALLOC_AS_NMI) {
+		/* Only one IRQ per NMI */
+		if (nr_irqs != 1)
+			return -EINVAL;
+
+		/* NMIs are aborted when the destination mode is logical. */
+		if (apic->dest_mode_logical)
+			return -EPERM;
+	}
 	/*
 	 * With IRQ remapping enabled, don't need contiguous CPU vectors
 	 * to support multiple MSI interrupts.
@@ -3206,6 +3215,15 @@ static int irq_remapping_alloc(struct irq_domain *domain, unsigned int virq,
 		pr_warn("Failed to allocate IRTE\n");
 		ret = index;
 		goto out_free_parent;
+	}
+
+	if (info->flags & X86_IRQ_ALLOC_AS_NMI) {
+		struct amd_iommu *iommu = amd_iommu_rlookup_table[devid];
+
+		if (!get_dev_entry_bit(devid, DEV_ENTRY_NMI_PASS)) {
+			set_dev_entry_bit(devid, DEV_ENTRY_NMI_PASS);
+			iommu_flush_dte(iommu, devid);
+		}
 	}
 
 	for (i = 0; i < nr_irqs; i++) {
