@@ -3299,6 +3299,10 @@ static int irq_remapping_alloc(struct irq_domain *domain, unsigned int virq,
 	if (nr_irqs > 1 && info->type != X86_IRQ_ALLOC_TYPE_PCI_MSI)
 		return -EINVAL;
 
+	/* NMIs are aborted when the destination mode is logical. */
+	if (info->flags & X86_IRQ_ALLOC_AS_NMI && apic->dest_mode_logical)
+		return -EPERM;
+
 	sbdf = get_devid(info);
 	if (sbdf < 0)
 		return -EINVAL;
@@ -3346,6 +3350,13 @@ static int irq_remapping_alloc(struct irq_domain *domain, unsigned int virq,
 		pr_warn("Failed to allocate IRTE\n");
 		ret = index;
 		goto out_free_parent;
+	}
+
+	if (info->flags & X86_IRQ_ALLOC_AS_NMI) {
+		if (!get_dev_entry_bit(iommu, devid, DEV_ENTRY_NMI_PASS)) {
+			set_dev_entry_bit(iommu, devid, DEV_ENTRY_NMI_PASS);
+			iommu_flush_dte(iommu, devid);
+		}
 	}
 
 	for (i = 0; i < nr_irqs; i++) {
