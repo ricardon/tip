@@ -3254,7 +3254,16 @@ static void irq_remapping_prepare_irte(struct amd_ir_data *data,
 	case X86_IRQ_ALLOC_TYPE_HPET:
 	case X86_IRQ_ALLOC_TYPE_PCI_MSI:
 	case X86_IRQ_ALLOC_TYPE_PCI_MSIX:
-		fill_msi_msg(&data->msi_entry, irte_info->index);
+		if (irq_cfg->delivery_mode == APIC_DELIVERY_MODE_NMI)
+			/*
+			 * The IOMMU lets NMIs pass through unmapped. Thus, the
+			 * MSI message, not the IRTE, determines the interrupt
+			 * configuration. Since we own the MSI message,
+			 * compose it.
+			 */
+			__irq_msi_compose_msg(irq_cfg, &data->msi_entry, true);
+		else
+			fill_msi_msg(&data->msi_entry, irte_info->index);
 		break;
 
 	default:
@@ -3642,6 +3651,15 @@ static int amd_ir_set_affinity(struct irq_data *data,
 	 * vector allocation.
 	 */
 	send_cleanup_vector(cfg);
+
+	/*
+	 * When the delivery mode of an interrupt is NMI, the IOMMU lets the NMI
+	 * interrupt messages pass through unmapped. Changes in the destination
+	 * must be reflected in the MSI message, not the IRTE. Descendant
+	 * irqchips must set the affinity and write the MSI message.
+	 */
+	if (cfg->delivery_mode == APIC_DELIVERY_MODE_NMI)
+		return IRQ_SET_MASK_OK;
 
 	return IRQ_SET_MASK_OK_DONE;
 }
