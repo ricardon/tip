@@ -141,4 +141,7 @@ extern u64 amd_iommu_efr;
 extern u64 amd_iommu_efr2;
 
 extern bool amd_iommu_snp_en;
+
+extern void set_dev_entry_bit(struct amd_iommu *iommu, u16 devid, u8 bit);
+extern int get_dev_entry_bit(struct amd_iommu *iommu, u16 devid, u8 bit);
 #endif

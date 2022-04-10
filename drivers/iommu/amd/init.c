@@ -999,7 +999,7 @@ static void __set_dev_entry_bit(struct dev_table_entry *dev_table,
 	dev_table[devid].data[i] |= (1UL << _bit);
 }
 
-static void set_dev_entry_bit(struct amd_iommu *iommu, u16 devid, u8 bit)
+void set_dev_entry_bit(struct amd_iommu *iommu, u16 devid, u8 bit)
 {
 	struct dev_table_entry *dev_table = get_dev_table(iommu);
 
@@ -1015,7 +1015,7 @@ static int __get_dev_entry_bit(struct dev_table_entry *dev_table,
 	return (dev_table[devid].data[i] & (1UL << _bit)) >> _bit;
 }
 
-static int get_dev_entry_bit(struct amd_iommu *iommu, u16 devid, u8 bit)
+int get_dev_entry_bit(struct amd_iommu *iommu, u16 devid, u8 bit)
 {
 	struct dev_table_entry *dev_table = get_dev_table(iommu);
 
