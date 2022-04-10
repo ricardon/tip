@@ -128,4 +128,7 @@ static inline void amd_iommu_apply_ivrs_quirks(void) { }
 
 extern void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 					 u64 *root, int mode);
+
+extern void set_dev_entry_bit(u16 devid, u8 bit);
+extern int get_dev_entry_bit(u16 devid, u8 bit);
 #endif
