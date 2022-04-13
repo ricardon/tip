@@ -1198,8 +1198,12 @@ intel_ir_set_affinity(struct irq_data *data, const struct cpumask *mask,
 	 * After this point, all the interrupts will start arriving
 	 * at the new destination. So, time to cleanup the previous
 	 * vector allocation.
+	 *
+	 * Do it only for non-NMI irqs. NMIs don't have associated
+	 * vectors.
 	 */
-	send_cleanup_vector(cfg);
+	if (cfg->delivery_mode != APIC_DELIVERY_MODE_NMI)
+		send_cleanup_vector(cfg);
 
 	return IRQ_SET_MASK_OK_DONE;
 }
@@ -1351,6 +1355,9 @@ static int intel_irq_remapping_alloc(struct irq_domain *domain,
 	 */
 	if (info->type == X86_IRQ_ALLOC_TYPE_PCI_MSI)
 		info->flags &= ~X86_IRQ_ALLOC_CONTIGUOUS_VECTORS;
+
+	if ((info->flags & X86_IRQ_ALLOC_AS_NMI) && nr_irqs != 1)
+		return -EINVAL;
 
 	ret = irq_domain_alloc_irqs_parent(domain, virq, nr_irqs, arg);
 	if (ret < 0)
