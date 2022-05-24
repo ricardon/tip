@@ -669,6 +669,9 @@ DEFINE_PER_CPU(struct sched_domain __rcu *, sd_numa);
 DEFINE_PER_CPU(struct sched_domain __rcu *, sd_asym_packing);
 DEFINE_PER_CPU(struct sched_domain __rcu *, sd_asym_cpucapacity);
 DEFINE_STATIC_KEY_FALSE(sched_asym_cpucapacity);
+#ifdef CONFIG_IPC_CLASSES
+DEFINE_STATIC_KEY_FALSE(sched_ipcc);
+#endif
 
 static void update_top_cache_domain(int cpu)
 {
@@ -2387,6 +2390,11 @@ build_sched_domains(const struct cpumask *cpu_map, struct sched_domain_attr *att
 
 	if (has_asym)
 		static_branch_inc_cpuslocked(&sched_asym_cpucapacity);
+
+#ifdef CONFIG_IPC_CLASSES
+	if (arch_has_ipc_classes())
+		static_branch_enable_cpuslocked(&sched_ipcc);
+#endif
 
 	if (rq && sched_debug_verbose) {
 		pr_info("root domain span: %*pbl (max cpu_capacity = %lu)\n",

@@ -2531,6 +2531,66 @@ void arch_scale_freq_tick(void)
 }
 #endif
 
+#ifdef CONFIG_IPC_CLASSES
+DECLARE_STATIC_KEY_FALSE(sched_ipcc);
+
+static inline bool sched_ipcc_enabled(void)
+{
+	return static_branch_unlikely(&sched_ipcc);
+}
+
+#ifndef arch_has_ipc_classes
+/**
+ * arch_has_ipc_classes() - Check whether hardware supports IPC classes of tasks
+ *
+ * Returns: true of IPC classes of tasks are supported.
+ */
+static __always_inline
+bool arch_has_ipc_classes(void)
+{
+	return false;
+}
+#endif
+
+#ifndef arch_update_ipcc
+/**
+ * arch_update_ipcc() - Update the IPC class of the current task
+ * @curr:		The current task
+ *
+ * Request that the IPC classification of @curr is updated.
+ *
+ * Returns: none
+ */
+static __always_inline
+void arch_update_ipcc(struct task_struct *curr)
+{
+}
+#endif
+
+#ifndef arch_get_ipcc_score
+/**
+ * arch_get_ipcc_score() - Get the IPC score of a class of task
+ * @ipcc:	The IPC class
+ * @cpu:	A CPU number
+ *
+ * Returns the performance score of an IPC class when running on @cpu.
+ * Error when either @class or @cpu are invalid.
+ */
+static __always_inline
+int arch_get_ipcc_score(unsigned short ipcc, int cpu)
+{
+	return 1;
+}
+#endif
+#else /* CONFIG_IPC_CLASSES */
+
+#define arch_get_ipcc_score(ipcc, cpu) (-EINVAL)
+#define arch_update_ipcc(curr)
+
+static inline bool sched_ipcc_enabled(void) { return false; }
+
+#endif /* CONFIG_IPC_CLASSES */
+
 #ifndef arch_scale_freq_capacity
 /**
  * arch_scale_freq_capacity - get the frequency scale factor of a given CPU.
