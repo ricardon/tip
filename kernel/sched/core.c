@@ -5496,6 +5496,9 @@ void scheduler_tick(bool user_tick)
 	unsigned long thermal_pressure;
 	u64 resched_latency;
 
+	if (sched_ipcc_enabled() && user_tick)
+		arch_update_ipcc(curr);
+
 	arch_scale_freq_tick();
 	sched_clock_tick();
 
