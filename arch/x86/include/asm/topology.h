@@ -230,9 +230,11 @@ void init_freq_invariance_cppc(void);
 #if defined(CONFIG_IPC_CLASSES) && defined(CONFIG_INTEL_HFI_THERMAL)
 int intel_hfi_has_ipc_classes(void);
 void intel_hfi_update_ipcc(struct task_struct *curr);
+int intel_hfi_get_ipcc_score(unsigned short ipcc, int cpu);
 
 #define arch_has_ipc_classes intel_hfi_has_ipc_classes
 #define arch_update_ipcc intel_hfi_update_ipcc
+#define arch_get_ipcc_score intel_hfi_get_ipcc_score
 #endif /* defined(CONFIG_IPC_CLASSES) && defined(CONFIG_INTEL_HFI_THERMAL) */
 
 #endif /* _ASM_X86_TOPOLOGY_H */
