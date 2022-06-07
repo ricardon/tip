@@ -9100,6 +9100,57 @@ group_type group_classify(unsigned int imbalance_pct,
 	return group_has_spare;
 }
 
+struct sg_lb_ipcc_stats {
+	int min_score;	/* Min(score(rq->curr->ipcc)) */
+	int min_ipcc;	/* Min(rq->curr->ipcc) */
+	long sum_score; /* Sum(score(rq->curr->ipcc)) */
+};
+
+#ifdef CONFIG_IPC_CLASSES
+static void init_rq_ipcc_stats(struct sg_lb_ipcc_stats *sgcs)
+{
+	*sgcs = (struct sg_lb_ipcc_stats) {
+		.min_score = INT_MAX,
+	};
+}
+
+/** Called only if cpu_of(@rq) is not idle and has tasks running. */
+static void update_sg_lb_ipcc_stats(struct sg_lb_ipcc_stats *sgcs,
+				    struct rq *rq)
+{
+	struct task_struct *curr;
+	unsigned short ipcc;
+	int score;
+
+	if (!sched_ipcc_enabled())
+		return;
+
+	curr = rcu_dereference(rq->curr);
+	if (!curr || (curr->flags & PF_EXITING) || is_idle_task(curr))
+		return;
+
+	ipcc = curr->ipcc;
+	score = arch_get_ipcc_score(ipcc, cpu_of(rq));
+
+	sgcs->sum_score += score;
+
+	if (score < sgcs->min_score) {
+		sgcs->min_score = score;
+		sgcs->min_ipcc = ipcc;
+	}
+}
+
+#else /* CONFIG_IPC_CLASSES */
+static void update_sg_lb_ipcc_stats(struct sg_lb_ipcc_stats *sgcs,
+				    struct rq *rq)
+{
+}
+
+static void init_rq_ipcc_stats(struct sg_lb_ipcc_stats *class_sgs)
+{
+}
+#endif /* CONFIG_IPC_CLASSES */
+
 /**
  * asym_smt_can_pull_tasks - Check whether the load balancing CPU can pull tasks
  * @dst_cpu:	Destination CPU of the load balancing
@@ -9212,9 +9263,11 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 				      struct sg_lb_stats *sgs,
 				      int *sg_status)
 {
+	struct sg_lb_ipcc_stats sgcs;
 	int i, nr_running, local_group;
 
 	memset(sgs, 0, sizeof(*sgs));
+	init_rq_ipcc_stats(&sgcs);
 
 	local_group = group == sds->local;
 
@@ -9264,6 +9317,8 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 			if (sgs->group_misfit_task_load < load)
 				sgs->group_misfit_task_load = load;
 		}
+
+		update_sg_lb_ipcc_stats(&sgcs, rq);
 	}
 
 	sgs->group_capacity = group->sgc->capacity;
