@@ -9233,6 +9233,24 @@ static bool sched_asym_ipcc_pick(struct sched_group *a,
 	return sched_asym_ipcc_prefer(a_stats, b_stats);
 }
 
+/**
+ * ipcc_score_delta - Get the IPCC score delta on a different CPU
+ * @p:		A task
+ * @alt_cpu:	A prospective CPU to place @p
+ *
+ * Returns: The IPCC score delta that @p would get if placed on @alt_cpu
+ */
+static int ipcc_score_delta(struct task_struct *p, int alt_cpu)
+{
+	unsigned long ipcc = p->ipcc;
+
+	if (!sched_ipcc_enabled())
+		return INT_MIN;
+
+	return arch_get_ipcc_score(ipcc, alt_cpu) -
+	       arch_get_ipcc_score(ipcc, task_cpu(p));
+}
+
 #else /* CONFIG_IPC_CLASSES */
 static void update_sg_lb_ipcc_stats(struct sg_lb_ipcc_stats *sgcs,
 				    struct rq *rq)
@@ -9256,6 +9274,11 @@ static bool sched_asym_ipcc_pick(struct sched_group *a,
 				 struct sg_lb_stats *b_stats)
 {
 	return false;
+}
+
+static int ipcc_score_delta(struct task_struct *p, int alt_cpu)
+{
+	return INT_MIN;
 }
 
 #endif /* CONFIG_IPC_CLASSES */
@@ -10419,8 +10442,8 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 {
 	struct rq *busiest = NULL, *rq;
 	unsigned long busiest_util = 0, busiest_load = 0, busiest_capacity = 1;
+	int i, busiest_ipcc_delta = INT_MIN;
 	unsigned int busiest_nr = 0;
-	int i;
 
 	for_each_cpu_and(i, sched_group_span(group), env->cpus) {
 		unsigned long capacity, load, util;
@@ -10526,8 +10549,37 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 
 		case migrate_task:
 			if (busiest_nr < nr_running) {
+				struct task_struct *curr;
+
 				busiest_nr = nr_running;
 				busiest = rq;
+
+				/*
+				 * Remember the IPC score delta of busiest::curr.
+				 * We may need it to break a tie with other queues
+				 * with equal nr_running.
+				 */
+				curr = rcu_dereference(busiest->curr);
+				busiest_ipcc_delta = ipcc_score_delta(curr,
+								      env->dst_cpu);
+			/*
+			 * If rq and busiest have the same number of running
+			 * tasks, pick rq if doing so would give rq::curr a
+			 * bigger IPC boost on dst_cpu.
+			 */
+			} else if (sched_ipcc_enabled() &&
+				   busiest_nr == nr_running) {
+				struct task_struct *curr;
+				int delta;
+
+				curr = rcu_dereference(rq->curr);
+				delta = ipcc_score_delta(curr, env->dst_cpu);
+
+				if (busiest_ipcc_delta < delta) {
+					busiest_ipcc_delta = delta;
+					busiest_nr = nr_running;
+					busiest = rq;
+				}
 			}
 			break;
 
