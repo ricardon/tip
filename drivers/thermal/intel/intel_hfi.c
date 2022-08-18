@@ -187,6 +187,19 @@ static struct workqueue_struct *hfi_updates_wq;
 #ifdef CONFIG_IPC_CLASSES
 static int __percpu *hfi_ipcc_scores;
 
+/*
+ * A task may be unclassified if it has been recently created, spend most of
+ * its lifetime sleeping, or hardware has not provided a classification.
+ *
+ * Most tasks will be classified as scheduler's IPC class 1 (HFI class 0)
+ * eventually. Meanwhile, the scheduler will place tasks of higher IPC score
+ * on higher-performance CPUs.
+ *
+ * IPC class 1 is a reasonable choice. It matches the performance capability
+ * of the legacy, classless, HFI table.
+ */
+#define HFI_UNCLASSIFIED_DEFAULT 1
+
 int intel_hfi_has_ipc_classes(void)
 {
 	return cpu_feature_enabled(X86_FEATURE_ITD);
@@ -222,7 +235,7 @@ int intel_hfi_get_ipcc_score(unsigned short ipcc, int cpu)
 		return -EINVAL;
 
 	if (ipcc == IPC_CLASS_UNCLASSIFIED)
-		return -EINVAL;
+		ipcc = HFI_UNCLASSIFIED_DEFAULT;
 
 	/*
 	 * Scheduler IPC classes start at 1. HFI classes start at 0.
