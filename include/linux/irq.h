@@ -263,6 +263,11 @@ static inline bool irqd_is_per_cpu(struct irq_data *d)
 	return __irqd_to_state(d) & IRQD_PER_CPU;
 }
 
+static inline void irqd_set_no_balance(struct irq_data *d)
+{
+	__irqd_to_state(d) |= IRQD_NO_BALANCING;
+}
+
 static inline bool irqd_can_balance(struct irq_data *d)
 {
 	return !(__irqd_to_state(d) & (IRQD_PER_CPU | IRQD_NO_BALANCING));

@@ -42,6 +42,7 @@ EXPORT_SYMBOL_GPL(x86_vector_domain);
 static DEFINE_RAW_SPINLOCK(vector_lock);
 static cpumask_var_t vector_searchmask;
 static struct irq_chip lapic_controller;
+static struct irq_chip lapic_nmi_controller;
 static struct irq_matrix *vector_matrix;
 #ifdef CONFIG_SMP
 static DEFINE_PER_CPU(struct hlist_head, cleanup_list);
@@ -451,6 +452,10 @@ static int x86_vector_activate(struct irq_domain *dom, struct irq_data *irqd,
 	trace_vector_activate(irqd->irq, apicd->is_managed,
 			      apicd->can_reserve, reserve);
 
+	/* NMI has a fixed vector. No vector management required */
+	if (apicd->hw_irq_cfg.delivery_mode == APIC_DELIVERY_MODE_NMI)
+		return 0;
+
 	raw_spin_lock_irqsave(&vector_lock, flags);
 	if (!apicd->can_reserve && !apicd->is_managed)
 		assign_irq_vector_any_locked(irqd);
@@ -471,6 +476,10 @@ static void vector_free_reserved_and_managed(struct irq_data *irqd)
 
 	trace_vector_teardown(irqd->irq, apicd->is_managed,
 			      apicd->has_reserved);
+
+	/* NMI has a fixed vector. No vector management required */
+	if (apicd->hw_irq_cfg.delivery_mode == APIC_DELIVERY_MODE_NMI)
+		return;
 
 	if (apicd->has_reserved)
 		irq_matrix_remove_reserved(vector_matrix);
@@ -539,6 +548,10 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 	if (disable_apic)
 		return -ENXIO;
 
+	/* Only one IRQ per NMI */
+	if ((info->flags & X86_IRQ_ALLOC_AS_NMI) && nr_irqs != 1)
+		return -EINVAL;
+
 	/*
 	 * Catch any attempt to touch the cascade interrupt on a PIC
 	 * equipped system.
@@ -572,6 +585,25 @@ static int x86_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 
 		/* Don't invoke affinity setter on deactivated interrupts */
 		irqd_set_affinity_on_activate(irqd);
+
+		if (info->flags & X86_IRQ_ALLOC_AS_NMI) {
+			/*
+			 * NMIs have a fixed vector and need their own
+			 * interrupt chip so nothing can end up in the
+			 * regular local APIC management code except the
+			 * MSI message composing callback.
+			 */
+			apicd->hw_irq_cfg.delivery_mode = APIC_DELIVERY_MODE_NMI;
+			irqd->chip = &lapic_nmi_controller;
+			/*
+			 * Exclude NMIs from balancing. This cannot work with
+			 * the regular affinity mechanisms. The local APIC NMI
+			 * controller provides a set_affinity callback for the
+			 * intended HPET NMI watchdog use case.
+			 */
+			irqd_set_no_balance(irqd);
+			return 0;
+		}
 
 		/*
 		 * A delivery mode may be specified in the interrupt allocation
@@ -872,8 +904,27 @@ static int apic_set_affinity(struct irq_data *irqd,
 	return err ? err : IRQ_SET_MASK_OK;
 }
 
+static int apic_nmi_set_affinity(struct irq_data *irqd,
+				 const struct cpumask *dest, bool force)
+{
+	struct apic_chip_data *apicd = apic_chip_data(irqd);
+	static struct cpumask tmp_mask;
+	int cpu;
+
+	cpumask_and(&tmp_mask, dest, cpu_online_mask);
+	if (cpumask_empty(&tmp_mask))
+		return -ENODEV;
+
+	cpu = cpumask_first(&tmp_mask);
+	apicd->hw_irq_cfg.dest_apicid = apic->calc_dest_apicid(cpu);
+	irq_data_update_effective_affinity(irqd, cpumask_of(cpu));
+
+	return IRQ_SET_MASK_OK;
+}
+
 #else
 # define apic_set_affinity	NULL
+# define apic_nmi_set_affinity	NULL
 #endif
 
 static int apic_retrigger_irq(struct irq_data *irqd)
@@ -912,6 +963,12 @@ static struct irq_chip lapic_controller = {
 	.irq_set_affinity	= apic_set_affinity,
 	.irq_compose_msi_msg	= x86_vector_msi_compose_msg,
 	.irq_retrigger		= apic_retrigger_irq,
+};
+
+static struct irq_chip lapic_nmi_controller = {
+	.name			= "APIC-NMI",
+	.irq_set_affinity	= apic_nmi_set_affinity,
+	.irq_compose_msi_msg	= x86_vector_msi_compose_msg,
 };
 
 #ifdef CONFIG_SMP
