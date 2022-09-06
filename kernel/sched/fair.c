@@ -8766,6 +8766,10 @@ struct sg_lb_stats {
 	unsigned int nr_numa_running;
 	unsigned int nr_preferred_running;
 #endif
+#ifdef CONFIG_IPC_CLASSES
+	long ipcc_score_after; /* Prospective IPCC score after load balancing */
+	long ipcc_score_before; /* IPCC score before load balancing */
+#endif
 };
 
 /*
@@ -9140,6 +9144,38 @@ static void update_sg_lb_ipcc_stats(struct sg_lb_ipcc_stats *sgcs,
 	}
 }
 
+static void update_sg_lb_stats_scores(struct sg_lb_ipcc_stats *sgcs,
+				      struct sg_lb_stats *sgs,
+				      struct sched_group *sg,
+				      int dst_cpu)
+{
+	int busy_cpus, score_on_dst_cpu;
+	long before, after;
+
+	if (!sched_ipcc_enabled())
+		return;
+
+	busy_cpus = sgs->group_weight - sgs->idle_cpus;
+	/* No busy CPUs in the group. No tasks to move. */
+	if (!busy_cpus)
+		return;
+
+	score_on_dst_cpu = arch_get_ipcc_score(sgcs->min_ipcc, dst_cpu);
+
+	before = sgcs->sum_score;
+	after = before - sgcs->min_score;
+
+	/* SMT siblings share throughput. */
+	if (busy_cpus > 1 && sg->flags & SD_SHARE_CPUCAPACITY) {
+		before /= busy_cpus;
+		/* One sibling will become idle after load balance. */
+		after /= busy_cpus - 1;
+	}
+
+	sgs->ipcc_score_after = after + score_on_dst_cpu;
+	sgs->ipcc_score_before = before;
+}
+
 #else /* CONFIG_IPC_CLASSES */
 static void update_sg_lb_ipcc_stats(struct sg_lb_ipcc_stats *sgcs,
 				    struct rq *rq)
@@ -9149,6 +9185,14 @@ static void update_sg_lb_ipcc_stats(struct sg_lb_ipcc_stats *sgcs,
 static void init_rq_ipcc_stats(struct sg_lb_ipcc_stats *class_sgs)
 {
 }
+
+static void update_sg_lb_stats_scores(struct sg_lb_ipcc_stats *sgcs,
+				      struct sg_lb_stats *sgs,
+				      struct sched_group *sg,
+				      int dst_cpu)
+{
+}
+
 #endif /* CONFIG_IPC_CLASSES */
 
 /**
@@ -9329,6 +9373,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 	if (!local_group && env->sd->flags & SD_ASYM_PACKING &&
 	    env->idle != CPU_NOT_IDLE && sgs->sum_h_nr_running &&
 	    sched_asym(env, sds, sgs, group)) {
+		update_sg_lb_stats_scores(&sgcs, sgs, group, env->dst_cpu);
 		sgs->group_asym_packing = 1;
 	}
 
