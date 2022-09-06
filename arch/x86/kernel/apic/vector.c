@@ -1050,6 +1050,10 @@ void send_cleanup_vector(struct irq_cfg *cfg)
 {
 	struct apic_chip_data *apicd;
 
+	/* NMI has a fixed vector. No vector management required. */
+	if (cfg->delivery_mode == APIC_DELIVERY_MODE_NMI)
+		return;
+
 	apicd = container_of(cfg, struct apic_chip_data, hw_irq_cfg);
 	if (apicd->move_in_progress)
 		__send_cleanup_vector(apicd);
