@@ -142,8 +142,11 @@ __setup("sched_thermal_decay_shift=", setup_sched_thermal_decay_shift);
 #ifdef CONFIG_SMP
 /*
  * For asym packing, by default the lower numbered CPU has higher priority.
+ *
+ * When doing ASYM_PACKING at the "MC" or higher domains, architectures may
+ * want to check the idle state of the SMT siblngs of @cpu.
  */
-int __weak arch_asym_cpu_priority(int cpu)
+int __weak arch_asym_cpu_priority(int cpu, bool check_smt)
 {
 	return -cpu;
 }

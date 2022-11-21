@@ -167,7 +167,7 @@ void sched_clear_itmt_support(void)
 	mutex_unlock(&itmt_update_mutex);
 }
 
-int arch_asym_cpu_priority(int cpu)
+int arch_asym_cpu_priority(int cpu, bool check_smt)
 {
 	return per_cpu(sched_core_priority, cpu);
 }

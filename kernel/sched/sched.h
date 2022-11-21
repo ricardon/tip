@@ -802,7 +802,8 @@ static inline long se_weight(struct sched_entity *se)
  */
 static inline bool sched_asym_prefer(int a, int b, bool check_smt)
 {
-	return arch_asym_cpu_priority(a) > arch_asym_cpu_priority(b);
+	return arch_asym_cpu_priority(a, check_smt) >
+	       arch_asym_cpu_priority(b, check_smt);
 }
 
 struct perf_domain {
