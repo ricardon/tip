@@ -9142,7 +9142,7 @@ static bool asym_smt_can_pull_tasks(int dst_cpu, struct sd_lb_stats *sds,
 		 * can help if it has higher priority and is idle (i.e.,
 		 * it has no running tasks).
 		 */
-		return sched_asym_prefer(dst_cpu, sg->asym_prefer_cpu);
+		return sched_asym_prefer(dst_cpu, sg->asym_prefer_cpu, false);
 	}
 
 	/*
@@ -9155,7 +9155,7 @@ static bool asym_smt_can_pull_tasks(int dst_cpu, struct sd_lb_stats *sds,
 	 * exactly one busy CPU. This covers SMT and non-SMT sched groups.
 	 */
 	if (sg_busy_cpus == 1 && !sds->local_stat.sum_nr_running)
-		return sched_asym_prefer(dst_cpu, sg->asym_prefer_cpu);
+		return sched_asym_prefer(dst_cpu, sg->asym_prefer_cpu, false);
 
 	return false;
 #else
@@ -9173,7 +9173,8 @@ sched_asym(struct lb_env *env, struct sd_lb_stats *sds,  struct sg_lb_stats *sgs
 	    (group->flags & SD_SHARE_CPUCAPACITY))
 		return asym_smt_can_pull_tasks(env->dst_cpu, sds, sgs, group);
 
-	return sched_asym_prefer(env->dst_cpu, group->asym_prefer_cpu);
+	/* Neither env::dst_cpu nor group::asym_prefer_cpu have SMT siblings. */
+	return sched_asym_prefer(env->dst_cpu, group->asym_prefer_cpu, false);
 }
 
 static inline bool
@@ -9339,7 +9340,9 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 
 	case group_asym_packing:
 		/* Prefer to move from lowest priority CPU's work */
-		if (sched_asym_prefer(sg->asym_prefer_cpu, sds->busiest->asym_prefer_cpu))
+		if (sched_asym_prefer(sg->asym_prefer_cpu,
+				      sds->busiest->asym_prefer_cpu,
+				      false))
 			return false;
 		break;
 
@@ -10285,7 +10288,7 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 
 		/* Make sure we only pull tasks from a CPU of lower priority */
 		if ((env->sd->flags & SD_ASYM_PACKING) &&
-		    sched_asym_prefer(i, env->dst_cpu) &&
+		    sched_asym_prefer(i, env->dst_cpu, true) &&
 		    nr_running == 1)
 			continue;
 
@@ -10378,7 +10381,7 @@ asym_active_balance(struct lb_env *env)
 	 * highest priority CPUs.
 	 */
 	return env->idle != CPU_NOT_IDLE && (env->sd->flags & SD_ASYM_PACKING) &&
-	       sched_asym_prefer(env->dst_cpu, env->src_cpu);
+	       sched_asym_prefer(env->dst_cpu, env->src_cpu, true);
 }
 
 static inline bool
@@ -11114,7 +11117,7 @@ static void nohz_balancer_kick(struct rq *rq)
 		 * around.
 		 */
 		for_each_cpu_and(i, sched_domain_span(sd), nohz.idle_cpus_mask) {
-			if (sched_asym_prefer(i, cpu)) {
+			if (sched_asym_prefer(i, cpu, true)) {
 				flags = NOHZ_STATS_KICK | NOHZ_BALANCE_KICK;
 				goto unlock;
 			}

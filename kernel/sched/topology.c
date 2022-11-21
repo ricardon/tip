@@ -1282,7 +1282,11 @@ static void init_sched_groups_capacity(int cpu, struct sched_domain *sd)
 		for_each_cpu(cpu, sched_group_span(sg)) {
 			if (max_cpu < 0)
 				max_cpu = cpu;
-			else if (sched_asym_prefer(cpu, max_cpu))
+			/*
+			 * We want the CPU priorities unaffected by the idle
+			 * state of its SMT siblings, if any.
+			 */
+			else if (sched_asym_prefer(cpu, max_cpu, false))
 				max_cpu = cpu;
 		}
 		sg->asym_prefer_cpu = max_cpu;
