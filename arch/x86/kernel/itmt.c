@@ -169,7 +169,10 @@ void sched_clear_itmt_support(void)
 
 int arch_asym_cpu_priority(int cpu, bool check_smt)
 {
-	return per_cpu(sched_core_priority, cpu);
+	if (!check_smt || sched_smt_siblings_idle(cpu))
+		return per_cpu(sched_core_priority, cpu);
+
+	return 0;
 }
 
 /**
