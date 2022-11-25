@@ -1119,6 +1119,11 @@ static int perf_mux_hrtimer_restart(struct perf_cpu_pmu_context *cpc)
 	return 0;
 }
 
+static int perf_mux_hrtimer_restart_ipi(void *arg)
+{
+	return perf_mux_hrtimer_restart(arg);
+}
+
 void perf_pmu_disable(struct pmu *pmu)
 {
 	int *count = this_cpu_ptr(pmu->pmu_disable_count);
@@ -11307,8 +11312,7 @@ perf_event_mux_interval_ms_store(struct device *dev,
 		cpc = per_cpu_ptr(pmu->cpu_pmu_context, cpu);
 		cpc->hrtimer_interval = ns_to_ktime(NSEC_PER_MSEC * timer);
 
-		cpu_function_call(cpu,
-			(remote_function_f)perf_mux_hrtimer_restart, cpc);
+		cpu_function_call(cpu, perf_mux_hrtimer_restart_ipi, cpc);
 	}
 	cpus_read_unlock();
 	mutex_unlock(&mux_interval_mutex);
@@ -12536,15 +12540,21 @@ SYSCALL_DEFINE5(perf_event_open,
 			 * perf_event_pmu_context.
 			 */
 			pmu = group_leader->pmu_ctx->pmu;
-		} else if (!is_software_event(event) &&
-			is_software_event(group_leader) &&
-			(group_leader->group_caps & PERF_EV_CAP_SOFTWARE)) {
-			/*
-			 * In case the group is a pure software group, and we
-			 * try to add a hardware event, move the whole group to
-			 * the hardware context.
-			 */
-			move_group = 1;
+		} else if (!is_software_event(event)) {
+			if (is_software_event(group_leader) &&
+			    (group_leader->group_caps & PERF_EV_CAP_SOFTWARE)) {
+				/*
+				 * In case the group is a pure software group, and we
+				 * try to add a hardware event, move the whole group to
+				 * the hardware context.
+				 */
+				move_group = 1;
+			}
+
+			/* Don't allow group of multiple hw events from different pmus */
+			if (!in_software_context(group_leader) &&
+			    group_leader->pmu_ctx->pmu != pmu)
+				goto err_locked;
 		}
 	}
 
