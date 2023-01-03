@@ -47,6 +47,8 @@ static int __read_mostly nmi_watchdog_available;
 struct cpumask watchdog_cpumask __read_mostly;
 unsigned long *watchdog_cpumask_bits = cpumask_bits(&watchdog_cpumask);
 
+static void __lockup_detector_reconfigure(void);
+
 #ifdef CONFIG_HARDLOCKUP_DETECTOR
 
 # ifdef CONFIG_SMP
@@ -85,6 +87,24 @@ static int __init hardlockup_panic_setup(char *str)
 }
 __setup("nmi_watchdog=", hardlockup_panic_setup);
 
+/**
+ * hardlockup_detector_mark_unavailable - Mark the NMI watchdog as unavailable
+ *
+ * Indicate that the hardlockup detector has become unavailable. This may
+ * happen if the hardware resources that the detector uses have become
+ * unreliable.
+ */
+void hardlockup_detector_mark_unavailable(void)
+{
+	mutex_lock(&watchdog_mutex);
+
+	/* These variables can be updated without stopping the detector. */
+	nmi_watchdog_user_enabled = 0;
+	nmi_watchdog_available = false;
+
+	__lockup_detector_reconfigure();
+	mutex_unlock(&watchdog_mutex);
+}
 #endif /* CONFIG_HARDLOCKUP_DETECTOR */
 
 /*
