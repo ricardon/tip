@@ -3228,6 +3228,13 @@
 
 	mga=		[HW,DRM]
 
+	microcode=	[X86] Control the behavior of the microcode
+			loader. Available options:
+
+			no_late_all - do not load on all SMT threads on
+			AMD. Loading on all logical threads is enabled by
+			default.
+
 	min_addr=nn[KMG]	[KNL,BOOT,IA-64] All physical memory below this
 			physical address is ignored.
 

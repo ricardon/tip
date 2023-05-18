@@ -40,10 +40,14 @@
 #include <asm/cmdline.h>
 #include <asm/setup.h>
 
+#include "internal.h"
+
 #define DRIVER_VERSION	"2.2"
 
 static struct microcode_ops	*microcode_ops;
 static bool dis_ucode_ldr = true;
+
+unsigned long control = LATE_ALL_THREADS;
 
 bool initrd_gone;
 
@@ -522,8 +526,32 @@ static ssize_t processor_flags_show(struct device *dev,
 	return sprintf(buf, "0x%x\n", uci->cpu_sig.pf);
 }
 
+static ssize_t control_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "0x%lx\n", control);
+}
+
+static ssize_t control_store(struct device *dev,
+			     struct device_attribute *attr,
+			     const char *buf, size_t count)
+{
+	unsigned long val;
+
+	if (kstrtoul(buf, 0, &val) < 0)
+		return -ERANGE;
+
+	if (val & CONTROL_FLAGS_MASK)
+		return -EINVAL;
+
+	control = val;
+
+	return count;
+}
+
 static DEVICE_ATTR_RO(version);
 static DEVICE_ATTR_RO(processor_flags);
+static DEVICE_ATTR_ADMIN_RW(control);
 
 static struct attribute *mc_default_attrs[] = {
 	&dev_attr_version.attr,
@@ -622,6 +650,7 @@ static struct attribute *cpu_root_microcode_attrs[] = {
 #ifdef CONFIG_MICROCODE_LATE_LOADING
 	&dev_attr_reload.attr,
 #endif
+	&dev_attr_control.attr,
 	NULL
 };
 
@@ -683,3 +712,18 @@ static int __init microcode_init(void)
 }
 fs_initcall(save_microcode_in_initrd);
 late_initcall(microcode_init);
+
+static int __init parse_cmdline_param(char *str)
+{
+	if (!str)
+		return 0;
+
+	if (*str == '=')
+		str++;
+
+	if (!strcmp(str, "no_late_all"))
+		control &= ~LATE_ALL_THREADS;
+
+        return 1;
+}
+__setup("microcode", parse_cmdline_param);
