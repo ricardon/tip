@@ -36,6 +36,8 @@
 #include <asm/cpu.h>
 #include <asm/msr.h>
 
+#include "internal.h"
+
 static struct equiv_cpu_table {
 	unsigned int num_entries;
 	struct equiv_cpu_entry *entry;
@@ -700,7 +702,8 @@ static enum ucode_state apply_microcode_amd(int cpu)
 	rdmsr(MSR_AMD64_PATCH_LEVEL, rev, dummy);
 
 	/* need to apply patch? */
-	if (rev >= mc_amd->hdr.patch_id) {
+	if ((rev > mc_amd->hdr.patch_id) ||
+	    (rev == mc_amd->hdr.patch_id && !(control & LATE_ALL_THREADS))) {
 		ret = UCODE_OK;
 		goto out;
 	}
